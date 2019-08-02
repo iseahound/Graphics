@@ -6,6 +6,10 @@
 
 #include <Gdip_All>    ; https://goo.gl/rUuEF5
 
+MyWndProc(hWnd, uMsg, wParam, lParam)
+{
+	return DllCall("DefWindowProc", "ptr",hWnd, "uint",uMsg, "uptr",wParam, "ptr",lParam, "ptr")
+}
 
 ; ImageEquality() - Ensures that the pixel vaules of multiple images across mutiple formats are identical.
 ImageEquality(images*){
@@ -135,72 +139,134 @@ class Graphics {
          window   := (window != "")   ? window   : this.arg.2
          activate := (activate != "") ? activate : this.arg.3
 
-         window := (window != "") ? window : " +AlwaysOnTop -Caption +ToolWindow"
-         window .= " +LastFound -DPIScale +E0x80000 +hwndhwnd"
+         ;WS_EX_TOPMOST             :=        0x8
+         ;WS_CAPTION                :=   0xC00000
+         ;WS_EX_TOOLWINDOW          :=       0x80
+         ;WS_EX_LAYERED             :=    0x80000
+         window := (window != "") ? window : " +E0x8 +E0x80 +E0x80000"
+         window .= " +LastFound -DPIScale +hwndhwnd"
+
+         ;window := (window != "") ? window : " +AlwaysOnTop -Caption +ToolWindow"
+         ;window .= " +LastFound -DPIScale +E0x80000 +hwndhwnd"
+
+
+         ; Thanks to jeeswg and majkinetor for showing how to create a custom window class.
+         vWinClass := "AutoHotkeyGraphics"
+         pWndProc := RegisterCallback("MyWndProc", "F")
+         hCursor := DllCall("LoadCursor", "ptr",0, "ptr",32512, "ptr") ;IDC_ARROW := 32512
+
+         ; struct tagWNDCLASSEXA - https://docs.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexa
+         ; struct tagWNDCLASSEXW - https://docs.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexw
+         vSize := A_PtrSize=8 ? 80:48
+         VarSetCapacity(WNDCLASSEX, vSize, 0)                                ; sizeof(WNDCLASSEX) = 48 or 80
+            , NumPut(      vSize, WNDCLASSEX,                   0,   "uint") ; cbSize
+            , NumPut(          3, WNDCLASSEX,                   4,   "uint") ; style
+            , NumPut(   pWndProc, WNDCLASSEX,                   8,    "ptr") ; lpfnWndProc
+            , NumPut(          0, WNDCLASSEX, A_PtrSize=8 ? 16:12,    "int") ; cbClsExtra
+            , NumPut(          0, WNDCLASSEX, A_PtrSize=8 ? 20:16,    "int") ; cbWndExtra
+            , NumPut(          0, WNDCLASSEX, A_PtrSize=8 ? 24:20,    "ptr") ; hInstance
+            , NumPut(          0, WNDCLASSEX, A_PtrSize=8 ? 32:24,    "ptr") ; hIcon
+            , NumPut(    hCursor, WNDCLASSEX, A_PtrSize=8 ? 40:28,    "ptr") ; hCursor
+            , NumPut(         16, WNDCLASSEX, A_PtrSize=8 ? 48:32,    "ptr") ; hbrBackground
+            , NumPut(          0, WNDCLASSEX, A_PtrSize=8 ? 56:36,    "ptr") ; lpszMenuName
+            , NumPut( &vWinClass, WNDCLASSEX, A_PtrSize=8 ? 64:40,    "ptr") ; lpszClassName
+            , NumPut(          0, WNDCLASSEX, A_PtrSize=8 ? 72:44,    "ptr") ; hIconSm
+
+         ; Registers a window class for subsequent use in calls to the CreateWindow or CreateWindowEx function.
+         hInstance := DllCall("RegisterClassEx", "ptr",&WNDCLASSEX, "ushort")
+
+
+         ; Window Styles - https://docs.microsoft.com/en-us/windows/win32/winmsg/window-styles
+         ; Extended Window Styles - https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
+
+         WS_OVERLAPPED             :=        0x0
+         WS_TILED                  :=        0x0
+         WS_TABSTOP                :=    0x10000
+         WS_MAXIMIZEBOX            :=    0x10000
+         WS_MINIMIZEBOX            :=    0x20000
+         WS_GROUP                  :=    0x20000
+         WS_SIZEBOX                :=    0x40000
+         WS_THICKFRAME             :=    0x40000
+         WS_SYSMENU                :=    0x80000
+         WS_HSCROLL                :=   0x100000
+         WS_VSCROLL                :=   0x200000
+         WS_DLGFRAME               :=   0x400000
+         WS_BORDER                 :=   0x800000
+         WS_MAXIMIZE               :=  0x1000000
+         WS_CLIPCHILDREN           :=  0x2000000
+         WS_CLIPSIBLINGS           :=  0x4000000
+         WS_DISABLED               :=  0x8000000
+         WS_VISIBLE                := 0x10000000
+         WS_ICONIC                 := 0x20000000
+         WS_MINIMIZE               := 0x20000000
+         WS_CHILD                  := 0x40000000
+         WS_CHILDWINDOW            := 0x40000000
+         WS_POPUP                  := 0x80000000
+         WS_CAPTION                :=   0xC00000
+         WS_OVERLAPPEDWINDOW       :=   0xCF0000
+         WS_TILEDWINDOW            :=   0xCF0000
+         WS_POPUPWINDOW            := 0x80880000
+
+         WS_EX_LEFT                :=        0x0
+         WS_EX_LTRREADING          :=        0x0
+         WS_EX_RIGHTSCROLLBAR      :=        0x0
+         WS_EX_DLGMODALFRAME       :=        0x1
+         WS_EX_NOPARENTNOTIFY      :=        0x4
+         WS_EX_TOPMOST             :=        0x8
+         WS_EX_ACCEPTFILES         :=       0x10
+         WS_EX_TRANSPARENT         :=       0x20
+         WS_EX_MDICHILD            :=       0x40
+         WS_EX_TOOLWINDOW          :=       0x80
+         WS_EX_WINDOWEDGE          :=      0x100
+         WS_EX_CLIENTEDGE          :=      0x200
+         WS_EX_CONTEXTHELP         :=      0x400
+         WS_EX_RIGHT               :=     0x1000
+         WS_EX_RTLREADING          :=     0x2000
+         WS_EX_LEFTSCROLLBAR       :=     0x4000
+         WS_EX_CONTROLPARENT       :=    0x10000
+         WS_EX_STATICEDGE          :=    0x20000
+         WS_EX_APPWINDOW           :=    0x40000
+         WS_EX_LAYERED             :=    0x80000
+         WS_EX_NOINHERITLAYOUT     :=   0x100000
+         WS_EX_NOREDIRECTIONBITMAP :=   0x200000
+         WS_EX_LAYOUTRTL           :=   0x400000
+         WS_EX_COMPOSITED          :=  0x2000000
+         WS_EX_NOACTIVATE          :=  0x8000000
+         WS_EX_OVERLAPPEDWINDOW    :=      0x300
+         WS_EX_PALETTEWINDOW       :=      0x188
+
+         vWinText := A_ScriptName                                  ; window title
+         vWinStyle := WS_SYSMENU                                   ; start off hidden with WS_VISIBLE off
+         ;vWinExStyle := WS_EX_DLGMODALFRAME | WS_EX_ACCEPTFILES
+         vWinExStyle := WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED
+
+         hwnd := DllCall("CreateWindowEx"
+            ,   "uint", vWinExStyle       ; dwExStyle
+            ,    "str", vWinClass         ; lpClassName
+            ,    "str", vWinText          ; lpWindowName
+            ,   "uint", vWinStyle         ; dwStyle
+            ,    "int", 0                 ; X
+            ,    "int", 0                 ; Y
+            ,    "int", A_ScreenWidth     ; nWidth
+            ,    "int", A_ScreenHeight    ; nHeight
+            ,    "ptr", 0                 ; hWndParent
+            ,    "ptr", 0                 ; hMenu
+            ,    "ptr", 0                 ; hInstance
+            ,    "ptr", 0                 ; lpParam
+            ,    "ptr")
+
+         WinShow, % "ahk_id " hwnd
+         if (this.activateOnAdmin && !this.isDrawable())
+            WinActivate, % "ahk_id " hwnd
+
 
          /*
-         pWndProc := RegisterCallback(vFunc, "F")
-         hCursor := DllCall("LoadCursor", Ptr,0, Ptr,32512, Ptr) ;IDC_ARROW := 32512
-         if (hIconSm = "")
-            hIconSm := hIcon
-
-         vPIs64 := (A_PtrSize=8)
-         vSize := vPIs64?80:48
-         VarSetCapacity(WNDCLASSEX, vSize, 0)
-            , NumPut(vSize, WNDCLASSEX, 0, "uint") ;cbSize
-            , NumPut(3, WNDCLASSEX, 4, "uint") ;style
-            , NumPut(pWndProc, WNDCLASSEX, 8, "ptr") ;lpfnWndProc
-            , NumPut(0, WNDCLASSEX, vPIs64?16:12, "int") ;cbClsExtra
-            , NumPut(0, WNDCLASSEX, vPIs64?20:16, "int") ;cbWndExtra
-            , NumPut(0, WNDCLASSEX, vPIs64?24:20, "ptr") ;hInstance
-            , NumPut(hIcon, WNDCLASSEX, vPIs64?32:24, "ptr") ;hIcon
-            , NumPut(hCursor, WNDCLASSEX, vPIs64?40:28, "ptr") ;hCursor
-            , NumPut(16, WNDCLASSEX, vPIs64?48:32, "ptr") ;hbrBackground
-            , NumPut(0, WNDCLASSEX, vPIs64?56:36, "ptr") ;lpszMenuName
-            , NumPut(&vWinClass, WNDCLASSEX, vPIs64?64:40, "ptr") ;lpszClassName
-            , NumPut(hIconSm, WNDCLASSEX, vPIs64?72:44, "ptr") ;hIconSm
-         DllCall("RegisterClassEx", "ptr",&WNDCLASSEX, "ushort")
-
-
-
-         vWinClass := "JEEClass"
-         vWinText := A_ScriptName ;window title
-         vWinStyle := WS_SYSMENU ;start off hidden with WS_VISIBLE off
-         vWinExStyle := WS_EX_DLGMODALFRAME | WS_EX_ACCEPTFILES
-         vPosX := 100, vPosY := 100
-         vPosW := vTextW+40, vPosH := vTextH+vCaptionH+80
-         hWndParent := 0, hMenu := 0, hInstance := 0, vParam := 0
-
-         hGui := DllCall("CreateWindowEx" ; ahk_id
-            ,   "uint", vWinExStyle
-            ,    "str", vWinClass
-            ,    "str", vWinText
-            ,   "uint", vWinStyle
-            ,    "int", vPosX
-            ,    "int", vPosY
-            ,    "int", vPosW
-            ,    "int", vPosH
-            ,    "ptr", hWndParent
-            ,    "ptr", hMenu
-            ,    "ptr", hInstance
-            ,    "ptr", vParam
-            ,    "ptr")
+         DllCall("UnregisterClass", "str",vWinClass, "ptr",0)
+         DllCall("GlobalFree", "ptr",pWndProc, "ptr")
          */
 
-
-
-
-
-         ; https://www.autohotkey.com/boards/viewtopic.php?t=31759
-         ; https://autohotkey.com/board/topic/27815-desktop-image-in-gui/
-         ; SS_BITMAP 0xE
-
-
-
-         Gui, New, % window
-         ;if (window ~= "i)\+Caption")
-         ;   Gui, Add, Picture, hwndpicID +0xE ; SS_BITMAP
-         Gui, Show, % (this.activateOnAdmin && !this.isDrawable()) ? "" : "NoActivate"
+         ;Gui, New, % window
+         ;Gui, Show, % (this.activateOnAdmin && !this.isDrawable()) ? "" : "NoActivate"
          this.hwnd := hwnd
          this.title := (title != "") ? title : RegExReplace(this.__class, "(.*\.)*(.*)$", "$2") "_" this.hwnd
          DllCall("SetWindowText", "ptr",this.hwnd, "str",this.title)
@@ -231,7 +297,7 @@ class Graphics {
          ; Creates a memory DC compatible with the application's current screen.
          this.hdc := CreateCompatibleDC()
 
-         ; struct BITMAPINFOHEADER - https://docs.microsoft.com/en-us/windows/desktop/api/wingdi/ns-wingdi-tagbitmapinfoheader
+         ; struct BITMAPINFOHEADER - https://docs.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfoheader
          VarSetCapacity(bi, 40, 0)                              ; sizeof(bi) = 40
             , NumPut(                     40, bi,  0,   "uint") ; Size
             , NumPut(       this.BitmapWidth, bi,  4,   "uint") ; Width
@@ -838,7 +904,7 @@ class Graphics {
          return Round(v*255)
       }
 
-      margin_and_padding(m, vw, vh, default := 0) {
+      margin_and_padding(m, vw, vh, default := "") {
          static q1 := "(?i)^.*?\b(?<!:|:\s)\b"
          static q2 := "(?!(?>\([^()]*\)|[^()]*)*\))(:\s*)?\(?(?<value>(?<=\()([\s:#%_a-z\-\.\d]+|\([\s:#%_a-z\-\.\d]*\))*(?=\))|[#%_a-z\-\.\d]+).*$"
          static valid := "(?i)^\s*(\-?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+)))\s*(%|pt|px|vh|vmin|vw)?\s*$"
@@ -858,8 +924,9 @@ class Graphics {
             _.3 := ((___ := RegExReplace(m, q1    "(b(ottom)?)"        q2, "${value}")) != m) ? ___ : _.3
             _.4 := ((___ := RegExReplace(m, q1    "(l(eft)?)"          q2, "${value}")) != m) ? ___ : _.4
             m := _
-         }
-         else return {"void":true, 1:default, 2:default, 3:default, 4:default}
+         } else if (default != "")
+            m := {1:default, 2:default, 3:default, 4:default}
+         else return {"void":true, 1:0, 2:0, 3:0, 4:0}
 
          ; Follow CSS guidelines for margin!
          if (m.2 == "" && m.3 == "" && m.4 == "")
@@ -2620,8 +2687,8 @@ class Graphics {
          y  -= (((a-1)//3) == 0) ? 0 : (((a-1)//3) == 1) ? h/2 : (((a-1)//3) == 2) ? h : 0
 
          ; Get margin.
-         _m := this.outer.parse.margin_and_padding(_m, vw, vh)
          m  := this.outer.parse.margin_and_padding( m, vw, vh)
+         _m := this.outer.parse.margin_and_padding(_m, vw, vh, (m.void) ? "1vmin" : "") ; Default margin is 1vmin.
 
          ; Modify _x, _y, _w, _h with margin and padding, increasing the size of the background.
          _w += Round(_m.2) + Round(_m.4) + Round(m.2) + Round(m.4)
@@ -2896,6 +2963,7 @@ class Graphics {
                   throw Exception("Gdiplus failed to start. Please ensure you have gdiplus on your system.")
 
          Gui, New, +LastFound +AlwaysOnTop -Caption -DPIScale +E0x80000 +ToolWindow +hwndhwnd
+         ;DllCall("ShowWindow", "ptr",hwnd, "int",(this.activateOnAdmin && !this.isDrawable()) ? 1 : 4)
          Gui, Show, % (this.activateOnAdmin && !this.isDrawable()) ? "" : "NoActivate"
          this.hwnd := hwnd
          this.title := (title != "") ? title : RegExReplace(this.__class, "(.*\.)*(.*)$", "$2") "_" this.hwnd
