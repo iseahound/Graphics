@@ -6,64 +6,60 @@
 
 #include <Gdip_All>    ; https://goo.gl/rUuEF5
 
-MyWndProc(hWnd, uMsg, wParam, lParam)
-{
-	return DllCall("DefWindowProc", "ptr",hWnd, "uint",uMsg, "uptr",wParam, "ptr",lParam, "ptr")
-}
 
 ; ImageEquality() - Ensures that the pixel vaules of multiple images across mutiple formats are identical.
 ImageEquality(images*){
-   return Graphics.Photo.Equality(images*)
+   return Graphics.ImageRenderer.Equality(images*)
 }
 
 ; ImagePreprocess() - Converts an image of any type into any new type with cropping and scaling.
 ImagePreprocess(cotype, image, crop:="", scale:="", terms*){
-   return Graphics.Photo.Preprocess(cotype, image, crop, scale, terms*)
+   return Graphics.ImageRenderer.Preprocess(cotype, image, crop, scale, terms*)
 }
 
 ; ImageRender() - Displays an image in customizable styles on the screen.
 ImageRender(image:="", style:="", polygons:=""){
-   return Graphics.Photo.Render(image, style, polygons)
+   return Graphics.ImageRenderer.Render(image, style, polygons)
 }
 
 ; ImageRenderI() - Allows the user to interact with the displayed image.
 ImageRenderI(image:="", style:="", polygons:="", keybinds:=""){
-   return new Graphics.INTERACTIVE(Graphics.Photo.Render(image, style, polygons), keybinds, 2)
+   return new Graphics.INTERACTIVE(Graphics.ImageRenderer.Render(image, style, polygons), keybinds, 2)
 }
 
 ; ImageRenderS() - Creates a sequence of images that can be interacted with.
 ImageRenderS(image:="", style:="", polygons:="", keybinds:=""){
-   return new Graphics.SEQUENCER(new Graphics.INTERACTIVE(Graphics.Photo.Render(image, style, polygons), keybinds, 2, true))
+   return new Graphics.SEQUENCER(new Graphics.INTERACTIVE(Graphics.ImageRenderer.Render(image, style, polygons), keybinds, 2, true))
 }
 
 ; PolygonRender() - Displays polygons in customizable styles on the screen.
 PolygonRender(polygon:="", style:=""){
-   return Graphics.Vector.Render(polygon, style)
+   return Graphics.PolygonRenderer.Render(polygon, style)
 }
 
 ; PolygonRenderI() - Allows the user to interact with the displayed polygon.
 PolygonRenderI(polygon:="", style:="", keybinds:=""){
-   return new Graphics.INTERACTIVE(Graphics.Vector.Render(polygon, style), keybinds, 0)
+   return new Graphics.INTERACTIVE(Graphics.PolygonRenderer.Render(polygon, style), keybinds, 0)
 }
 
 ; PolygonRenderS() - Creates a sequence of polygons that can be interacted with.
 PolygonRenderS(polygon:="", style:="", keybinds:=""){
-   return new Graphics.SEQUENCER(new Graphics.INTERACTIVE(Graphics.Vector.Render(polygon, style), keybinds, 0, true))
+   return new Graphics.SEQUENCER(new Graphics.INTERACTIVE(Graphics.PolygonRenderer.Render(polygon, style), keybinds, 0, true))
 }
 
 ; TextRender() - Displays text in customizable styles on the screen.
 TextRender(text:="", background_style:="", text_style:=""){
-   return Graphics.Subtitle.Render(text, background_style, text_style)
+   return Graphics.TextRenderer.Render(text, background_style, text_style)
 }
 
 ; TextRenderI() - Allows the user to interact with the displayed text.
 TextRenderI(text:="", background_style:="", text_style:="", keybinds:=""){
-   return new Graphics.INTERACTIVE(Graphics.Subtitle.Render(text, background_style, text_style), keybinds, 2)
+   return new Graphics.INTERACTIVE(Graphics.TextRenderer.Render(text, background_style, text_style), keybinds, 2)
 }
 
 ; TextRenderS() - Creates a sequence of text that can be interacted with.
 TextRenderS(text:="", background_style:="", text_style:="", keybinds:=""){
-   return new Graphics.SEQUENCER(new Graphics.INTERACTIVE(Graphics.Subtitle.Render(text, background_style, text_style), keybinds, 2, true))
+   return new Graphics.SEQUENCER(new Graphics.INTERACTIVE(Graphics.TextRenderer.Render(text, background_style, text_style), keybinds, 2, true))
 }
 
 ; Synthesiser() - The accumulation of all the previous functions to create a
@@ -75,85 +71,23 @@ Synthesiser(){
 
 class Graphics {
 
-   static pToken        ; Pointer to an instance of the GDI+ library.
-   static objects := 0  ; Number of active uses of this Graphics class.
+   static pToken          ; Pointer to an instance of the GDI+ library.
+   static renderers := 0  ; Number of active renderer objects currently being used.
 
    ; Duality #0 - Loads a local instance of the GDI+ library.
    Startup() {
       global pToken
-      return this.pToken := (this.objects++ > 0) ? this.pToken : ((pToken) ? pToken : Gdip_Startup())
-   }
-
-   ; Duality #0 - Releases a local instance of the GDI+ library.
-   Shutdown() {
-      global pToken
-      return this.pToken := (--this.objects <= 0) ? ((pToken) ? pToken : Gdip_Shutdown(this.pToken)) : this.pToken
-   }
-
-   class object {
-
-      ; IO - Capture input and internalize environmental data.
-      IO(terms*) {
-         static A_Frequency, f := DllCall("QueryPerformanceFrequency", "int64*",A_Frequency)
-         DllCall("QueryPerformanceCounter", "int64*",A_PreciseTime)
-
-         this.PreciseTime := A_PreciseTime
-         this.TickCount := A_TickCount
-         this.Frequency := A_Frequency
-         this.ScreenWidth := A_ScreenWidth
-         this.ScreenHeight := A_ScreenHeight
-         this.IsAdmin := A_IsAdmin
-         return this.arg := terms
-      }
-
-      ; Duality #1 - Safe wrapper for the GDI+ library during object instantiation.
-      __New(terms*) {
-         this.IO(terms*)
-
-         global pToken
-         if !(this.outer.Startup())
-            if !(pToken)
-               if !(this.pToken := Gdip_Startup())
-                  throw Exception("Gdiplus failed to start. Please ensure you have gdiplus on your system.")
-
-         return this.Create(terms*)
-      }
-
-      ; Duality #1 - Safe wrapper for the GDI+ library during object garbage collection.
-      __Delete() {
-         if (this.hwnd)
-            this.Destroy()
-
-         global pToken
-         if (this.outer.pToken)
-            return this.outer.Shutdown()
-         if (pToken)
-            return
-         if (this.pToken)
-            return Gdip_Shutdown(this.pToken)
-      }
-
-      ; Duality #2 - Creates a window.
-      Create(title := "", window := "", activate := "") {
-         title    := (title != "")    ? title    : this.arg.1
-         window   := (window != "")   ? window   : this.arg.2
-         activate := (activate != "") ? activate : this.arg.3
-
-         ;WS_EX_TOPMOST             :=        0x8
-         ;WS_CAPTION                :=   0xC00000
-         ;WS_EX_TOOLWINDOW          :=       0x80
-         ;WS_EX_LAYERED             :=    0x80000
-         window := (window != "") ? window : " +E0x8 +E0x80 +E0x80000"
-         window .= " +LastFound -DPIScale +hwndhwnd"
-
-         ;window := (window != "") ? window : " +AlwaysOnTop -Caption +ToolWindow"
-         ;window .= " +LastFound -DPIScale +E0x80000 +hwndhwnd"
-
-
+      if (this.renderers++ <= 0) {
          ; Thanks to jeeswg and majkinetor for showing how to create a custom window class.
          vWinClass := "AutoHotkeyGraphics"
-         pWndProc := RegisterCallback("MyWndProc", "F")
-         hCursor := DllCall("LoadCursor", "ptr",0, "ptr",32512, "ptr") ;IDC_ARROW := 32512
+         if (A_AhkVersion < 2) {
+            _fn := "RegisterCallback"
+            pWndProc := %_fn%(this.callback, "F",,&this)
+         } else {
+            _fn := "CallbackCreate"
+            pWndProc := %_fn%(this.callback, "F")
+         }
+         hCursor := DllCall("LoadCursor", "ptr",0, "ptr",32512, "ptr") ; IDC_ARROW := 32512
 
          ; struct tagWNDCLASSEXA - https://docs.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexa
          ; struct tagWNDCLASSEXW - https://docs.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexw
@@ -173,487 +107,26 @@ class Graphics {
             , NumPut(          0, WNDCLASSEX, A_PtrSize=8 ? 72:44,    "ptr") ; hIconSm
 
          ; Registers a window class for subsequent use in calls to the CreateWindow or CreateWindowEx function.
-         hInstance := DllCall("RegisterClassEx", "ptr",&WNDCLASSEX, "ushort")
+         DllCall("RegisterClassEx", "ptr",&WNDCLASSEX, "ushort")
 
-
-         ; Window Styles - https://docs.microsoft.com/en-us/windows/win32/winmsg/window-styles
-         ; Extended Window Styles - https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
-
-         WS_OVERLAPPED             :=        0x0
-         WS_TILED                  :=        0x0
-         WS_TABSTOP                :=    0x10000
-         WS_MAXIMIZEBOX            :=    0x10000
-         WS_MINIMIZEBOX            :=    0x20000
-         WS_GROUP                  :=    0x20000
-         WS_SIZEBOX                :=    0x40000
-         WS_THICKFRAME             :=    0x40000
-         WS_SYSMENU                :=    0x80000
-         WS_HSCROLL                :=   0x100000
-         WS_VSCROLL                :=   0x200000
-         WS_DLGFRAME               :=   0x400000
-         WS_BORDER                 :=   0x800000
-         WS_MAXIMIZE               :=  0x1000000
-         WS_CLIPCHILDREN           :=  0x2000000
-         WS_CLIPSIBLINGS           :=  0x4000000
-         WS_DISABLED               :=  0x8000000
-         WS_VISIBLE                := 0x10000000
-         WS_ICONIC                 := 0x20000000
-         WS_MINIMIZE               := 0x20000000
-         WS_CHILD                  := 0x40000000
-         WS_CHILDWINDOW            := 0x40000000
-         WS_POPUP                  := 0x80000000
-         WS_CAPTION                :=   0xC00000
-         WS_OVERLAPPEDWINDOW       :=   0xCF0000
-         WS_TILEDWINDOW            :=   0xCF0000
-         WS_POPUPWINDOW            := 0x80880000
-
-         WS_EX_LEFT                :=        0x0
-         WS_EX_LTRREADING          :=        0x0
-         WS_EX_RIGHTSCROLLBAR      :=        0x0
-         WS_EX_DLGMODALFRAME       :=        0x1
-         WS_EX_NOPARENTNOTIFY      :=        0x4
-         WS_EX_TOPMOST             :=        0x8
-         WS_EX_ACCEPTFILES         :=       0x10
-         WS_EX_TRANSPARENT         :=       0x20
-         WS_EX_MDICHILD            :=       0x40
-         WS_EX_TOOLWINDOW          :=       0x80
-         WS_EX_WINDOWEDGE          :=      0x100
-         WS_EX_CLIENTEDGE          :=      0x200
-         WS_EX_CONTEXTHELP         :=      0x400
-         WS_EX_RIGHT               :=     0x1000
-         WS_EX_RTLREADING          :=     0x2000
-         WS_EX_LEFTSCROLLBAR       :=     0x4000
-         WS_EX_CONTROLPARENT       :=    0x10000
-         WS_EX_STATICEDGE          :=    0x20000
-         WS_EX_APPWINDOW           :=    0x40000
-         WS_EX_LAYERED             :=    0x80000
-         WS_EX_NOINHERITLAYOUT     :=   0x100000
-         WS_EX_NOREDIRECTIONBITMAP :=   0x200000
-         WS_EX_LAYOUTRTL           :=   0x400000
-         WS_EX_COMPOSITED          :=  0x2000000
-         WS_EX_NOACTIVATE          :=  0x8000000
-         WS_EX_OVERLAPPEDWINDOW    :=      0x300
-         WS_EX_PALETTEWINDOW       :=      0x188
-
-         vWinText := A_ScriptName                                  ; window title
-         vWinStyle := WS_SYSMENU                                   ; start off hidden with WS_VISIBLE off
-         ;vWinExStyle := WS_EX_DLGMODALFRAME | WS_EX_ACCEPTFILES
-         vWinExStyle := WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED
-
-         hwnd := DllCall("CreateWindowEx"
-            ,   "uint", vWinExStyle       ; dwExStyle
-            ,    "str", vWinClass         ; lpClassName
-            ,    "str", vWinText          ; lpWindowName
-            ,   "uint", vWinStyle         ; dwStyle
-            ,    "int", 0                 ; X
-            ,    "int", 0                 ; Y
-            ,    "int", A_ScreenWidth     ; nWidth
-            ,    "int", A_ScreenHeight    ; nHeight
-            ,    "ptr", 0                 ; hWndParent
-            ,    "ptr", 0                 ; hMenu
-            ,    "ptr", 0                 ; hInstance
-            ,    "ptr", 0                 ; lpParam
-            ,    "ptr")
-
-         WinShow, % "ahk_id " hwnd
-         if (this.activateOnAdmin && !this.isDrawable())
-            WinActivate, % "ahk_id " hwnd
-
-
-         /*
-         DllCall("UnregisterClass", "str",vWinClass, "ptr",0)
-         DllCall("GlobalFree", "ptr",pWndProc, "ptr")
-         */
-
-         ;Gui, New, % window
-         ;Gui, Show, % (this.activateOnAdmin && !this.isDrawable()) ? "" : "NoActivate"
-         this.hwnd := hwnd
-         this.title := (title != "") ? title : RegExReplace(this.__class, "(.*\.)*(.*)$", "$2") "_" this.hwnd
-         DllCall("SetWindowText", "ptr",this.hwnd, "str",this.title)
-
-         this.BitmapLeft := 0
-         this.BitmapTop := 0
-         this.BitmapWidth := this.ScreenWidth
-         this.BitmapHeight := this.ScreenHeight
-
-         global PreciseTime
-         DllCall("QueryPerformanceCounter", "int64*",A_PreciseTime)
-         ;Tooltip % PreciseTime := (A_PreciseTime - this.PreciseTime) / this.Frequency
-
-         return this.LoadMemory()
+         ; Set pToken.
+         this.pToken := (pToken) ? pToken : Gdip_Startup()
       }
+      return this.pToken
+   }
 
-      ; Duality #2 - Destroys a window.
-      Destroy() {
-         if (this.hdc)
-            this.FreeMemory()
-         DllCall("DestroyWindow", "ptr",this.hwnd)
-         this.hwnd := ""
-         return this
+   ; Duality #0 - Releases a local instance of the GDI+ library.
+   Shutdown() {
+      global pToken
+      if (--this.renderers <= 0) {
+         DllCall("UnregisterClass", "str","AutoHotkeyGraphics", "ptr",0)
+         (pToken) ? pToken : Gdip_Shutdown(this.pToken)
       }
+      return
+   }
 
-      ; Duality #3 - Allocates the memory buffer.
-      LoadMemory() {
-         ; Creates a memory DC compatible with the application's current screen.
-         this.hdc := CreateCompatibleDC()
-
-         ; struct BITMAPINFOHEADER - https://docs.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfoheader
-         VarSetCapacity(bi, 40, 0)                              ; sizeof(bi) = 40
-            , NumPut(                     40, bi,  0,   "uint") ; Size
-            , NumPut(       this.BitmapWidth, bi,  4,   "uint") ; Width
-            , NumPut(     -this.BitmapHeight, bi,  8,    "int") ; Height - Negative so (0, 0) is top-left.
-            , NumPut(                      1, bi, 12, "ushort") ; Planes
-            , NumPut(                     32, bi, 14, "ushort") ; BitCount / BitsPerPixel
-
-         ; Creates a Device Independent Bitmap giving us a pointer to the pixels.
-         this.hbm := DllCall("CreateDIBSection", "ptr",this.hdc, "ptr",&bi, "uint",0, "ptr*",pBits, "ptr",0, "uint",0, "ptr")
-         this.obm := SelectObject(this.hdc, this.hbm)
-         this.gfx := Gdip_GraphicsFromHDC(this.hdc)
-
-         ; IMPORTANT: DIB pixels are pre-multiplied ARGB because that's how they're displayed on the screen.
-         ; enum PixelFormat - https://svn.eiffel.com/eiffelstudio/trunk/Src/library/wel/gdi/gdiplus/wel_gdip_pixel_format.e
-         this.pBits := pBits
-         this.pixelFormat := 0xE200B ; Format32bppPArgb
-         this.stride := 4 * this.BitmapWidth
-         this.size := this.stride * this.BitmapHeight
-         this.layers := {}
-
-         return this
-      }
-
-      ; Duality #3 - Frees the memory buffer.
-      FreeMemory() {
-         Gdip_DeleteGraphics(this.gfx)
-         SelectObject(this.hdc, this.obm)
-         DeleteObject(this.hbm)
-         DeleteDC(this.hdc)
-         this.gfx := this.obm := this.pBits := this.hbm := this.hdc := ""
-         return this
-      }
-
-      ; BROKEN - create a fixed size flag.
-      UpdateMemory(BitmapWidth := 0, BitmapHeight := 0) {
-         BitmapWidth := (BitmapWidth) ? BitmapWidth : A_ScreenWidth
-         BitmapHeight := (BitmapHeight) ? BitmapHeight : A_ScreenHeight
-
-         if (BitmapWidth == this.BitmapWidth && BitmapHeight == this.BitmapHeight)
-            return this
-
-         this.BitmapWidth := BitmapWidth
-         this.BitmapHeight := BitmapHeight
-         return this.FreeMemory().LoadMemory().Recover()
-      }
-
-      CompressMemory() {
-         ; Create.
-         hdc := CreateCompatibleDC(this.hdc)
-         hbm := CreateDIBSection(this.w, -this.h, hdc, 32, pBits)
-         obm := SelectObject(hdc, hbm)
-
-         ; Copy.
-         BitBlt(hdc, 0, 0, this.w, this.h, this.hdc, this.x, this.y)
-
-         ; Delete.
-         Gdip_DeleteGraphics(this.gfx)
-         SelectObject(this.hdc, this.obm)
-         DeleteObject(this.hbm)
-         DeleteDC(this.hdc)
-
-         ; Replace.
-         this.hdc := hdc
-         this.hbm := hbm
-         this.obm := obm
-         this.gfx := Gdip_GraphicsFromHDC(hdc)
-         this.pBits := pBits
-
-         ; Update
-         this.BitmapLeft := this.x
-         this.BitmapTop := this.y
-         this.BitmapWidth := this.w
-         this.BitmapHeight := this.h
-
-         this.w -= this.x
-         this.h -= this.y
-         this.x := 0
-         this.y := 0
-      }
-
-      DumpMemory() {
-         VarSetCapacity(pixels, this.size)
-         DllCall("RtlMoveMemory", "ptr",&pixels, "ptr",this.pBits, "uptr",this.size)
-         return pixels
-      }
-
-      DebugMemory() {
-         loop
-            MsgBox % Format("0x{:08x}", NumGet(this.pBits, 4*(A_Index-1), "uint"))
-      }
-
-      BitmapFromBits() {
-         DllCall("gdiplus\GdipCreateBitmapFromScan0", "int",this.BitmapWidth, "int",this.ScreenHeight
-            , "int",this.stride, "uint",this.pixelFormat, "ptr",this.pBits, "ptr*",pBitmap)
-         return pBitmap
-      }
-
-      NewBitmap() {
-         DllCall("gdiplus\GdipCreateBitmapFromScan0", "int",this.BitmapWidth, "int",this.BitmapHeight
-            , "int",this.stride, "uint",this.pixelFormat, "ptr",this.pBits, "ptr*",pBitmap)
-         DllCall("gdiplus\GdipCloneBitmapAreaI", "int",0, "int",0, "int",this.BitmapWidth, "int",this.BitmapHeight
-            , "uint",0x26200a, "ptr",pBitmap, "ptr*",pBitmapDest)
-         Gdip_DisposeImage(pBitmap)
-         return pBitmapDest
-      }
-
-      BitmapFromScan0() {
-         this.SetCapacity("pixels", this.size)
-         this.Scan0 := this.GetAddress("pixels")
-         DllCall("RtlMoveMemory", "ptr",this.Scan0, "ptr",this.pBits, "uptr",this.size)
-         DllCall("gdiplus\GdipCreateBitmapFromScan0", "int",this.BitmapWidth, "int",this.BitmapHeight
-            , "int",this.stride, "uint",this.pixelFormat, "ptr",this.Scan0, "ptr*",pBitmap)
-         return pBitmap
-      }
-
-      Recover() {
-         loop % this.layers.maxIndex()
-            this.Draw(this.layers[A_Index].1, this.layers[A_Index].2, this.layers[A_Index].3)
-         return this
-      }
-
-      Draw(data := "", styles*) {
-         this.Clear()
-         for i, style in styles
-            if (style != "") {
-               okay := true
-               break
-            }
-         if !(okay)
-            styles := this.styles
-         this.data := data
-         this.styles := styles
-         this.layers.push([data, styles*])
-         o := this.DrawRaw(this.gfx, this.ScreenWidth, this.ScreenHeight, data, styles*)
-         this.t := o.0
-         this.x := o.1
-         this.y := o.2
-         this.w := o.3
-         this.h := o.4
-         return this
-      }
-
-      Clear() {
-         if (this.final) {
-            DllCall("QueryPerformanceCounter", "int64*",A_PreciseTime)
-            this.PreciseTime := A_PreciseTime
-            this.TickCount := A_TickCount
-            this.layers := {}
-            this.x := this.y := this.w := this.h := "" ; not 0! BROKEN
-            Gdip_GraphicsClear(this.gfx)
-            this.final := "" ; BROKEN - should be right when final changes.
-         }
-
-         return this.UpdateMemory()
-      }
-
-      CRC32() {
-         return Format("0x{:08x}", DllCall("ntdll.dll\RtlComputeCrc32", "uint",0, "ptr",this.pBits, "uint",this.size, "uint"))
-      }
-
-      Finalize() {
-         this.final := 1
-         VarSetCapacity(puuid, 16, 0)
-         if !(DllCall("rpcrt4.dll\UuidCreate", "ptr", &puuid))
-            if !(DllCall("rpcrt4.dll\UuidToString", "ptr", &puuid, "uint*", suuid))
-               this.final := StrGet(suuid), DllCall("rpcrt4.dll\RpcStringFree", "uint*", suuid)
-         return this
-      }
-
-      Output(terms*) {
-         this.Draw(terms*)
-
-         if (!this.locked)
-            UpdateLayeredWindow(this.hwnd, this.hdc, this.BitmapLeft, this.BitmapTop, this.BitmapWidth, this.BitmapHeight)
-
-         this.Finalize()
-
-         if (this.t) {
-            blank := ObjBindMethod(this, "blank")
-            SetTimer, % blank, % -1 * this.t
-         }
-
-         return this
-      }
-
-      Blank() {
-         Gdip_GraphicsClear(this.gfx)
-         UpdateLayeredWindow(this.hwnd, this.hdc, this.BitmapLeft, this.BitmapTop, this.BitmapWidth, this.BitmapHeight)
-         return this
-      }
-
-      Wait(time) {
-         Sleep % time - (A_TickCount - this.TickCount)
-         return this
-      }
-
-      Bitmap(x := "", y := "", w := "", h := "") {
-         x := (x != "") ? x : this.x
-         y := (y != "") ? y : this.y
-         w := (w != "") ? w : this.w
-         h := (h != "") ? h : this.h
-
-         pBitmap := Gdip_CreateBitmap(this.BitmapWidth, this.BitmapHeight)
-         pGraphics := Gdip_GraphicsFromImage(pBitmap)
-         loop % this.layers.maxIndex()
-            this.DrawRaw(pGraphics, this.BitmapWidth, this.BitmapHeight, this.layers[A_Index].1, this.layers[A_Index].2, this.layers[A_Index].3)
-         Gdip_DeleteGraphics(pGraphics)
-         pBitmapCopy := Gdip_CloneBitmapArea(pBitmap, x, y, w, h)
-         Gdip_DisposeImage(pBitmap)
-         return pBitmapCopy ; Please dispose of this image responsibly.
-      }
-
-      Save(filename := "", quality := 90) {
-         filename := (filename ~= "i)\.(bmp|dib|rle|jpg|jpeg|jpe|jfif|gif|tif|tiff|png)$") ? filename
-                  : (filename != "") ? filename ".png" : this.title ".png"
-         pBitmap := this.Bitmap()
-         Gdip_SaveBitmapToFile(pBitmap, filename, quality)
-         Gdip_DisposeImage(pBitmap)
-         return this
-      }
-
-      ; 3) Just takes a picture of the screen!
-      Screenshot(filename := "", quality := 90) {
-         filename := (filename ~= "i)\.(bmp|dib|rle|jpg|jpeg|jpe|jfif|gif|tif|tiff|png)$") ? filename
-                  : (filename != "") ? filename ".png" : this.title ".png"
-         pBitmap := Gdip_BitmapFromScreen(this.x "|" this.y "|" this.w "|" this.h)
-         Gdip_SaveBitmapToFile(pBitmap, filename, quality)
-         Gdip_DisposeImage(pBitmap)
-         return this
-      }
-
-      isDrawable(win := "A") {
-          static WM_KEYDOWN := 0x100
-          static WM_KEYUP := 0x101
-          static vk_to_use := 7
-          ; Test whether we can send keystrokes to this window.
-          ; Use a virtual keycode which is unlikely to do anything:
-          PostMessage, WM_KEYDOWN, vk_to_use, 0,, % win
-          if !ErrorLevel
-          {   ; Seems best to post key-up, in case the window is keeping track.
-              PostMessage, WM_KEYUP, vk_to_use, 0xC0000000,, % win
-              return true
-          }
-          return false
-      }
-
-      Show(i := 8) {
-         DllCall("ShowWindow", "ptr",this.hwnd, "int",i)
-         return this
-      }
-
-      Hide() {
-         DllCall("ShowWindow", "ptr",this.hwnd, "int",0)
-         return this
-      }
-
-      Activate() {
-         DllCall("ShowWindow", "ptr",this.hwnd, "int",1)
-         return this
-      }
-
-      isVisible() {
-         return DllCall("IsWindowVisible", "ptr",this.hwnd)
-      }
-
-      ToggleVisible() {
-         return (this.isVisible()) ? this.Hide() : this.Show()
-      }
-
-      AlwaysOnTop(s := -1) {
-         _dhw := A_DetectHiddenWindows
-         DetectHiddenWindows On
-         WinSet, AlwaysOnTop, % s, % "ahk_id" this.hwnd
-         DetectHiddenWindows %_dhw%
-         return this
-      }
-
-      Bottom() {
-         _dhw := A_DetectHiddenWindows
-         DetectHiddenWindows On
-         WinSet, Bottom,, % "ahk_id" this.hwnd
-         DetectHiddenWindows %_dhw%
-         return this
-      }
-
-      ClickThrough(s := -1) {
-         s := (s = -1) ? "^" : (s = 0) ? "-" : "+"
-         _dhw := A_DetectHiddenWindows
-         DetectHiddenWindows On
-         WinSet, ExStyle, % s "0x20", % "ahk_id" this.hwnd
-         DetectHiddenWindows %_dhw%
-         return this
-      }
-
-      Desktop() {
-         ; Based on: https://www.codeproject.com/Articles/856020/Draw-Behind-Desktop-Icons-in-Windows-plus?msg=5478543#xx5478543xx
-         DllCall("SendMessage", "ptr",WinExist("ahk_class Progman"), "uint",0x052C, "ptr",0x0000000D, "ptr",0)
-         DllCall("SendMessage", "ptr",WinExist("ahk_class Progman"), "uint",0x052C, "ptr",0x0000000D, "ptr",1) ; Post-Creator's Update Windows 10.
-         WinGet, windows, List, ahk_class WorkerW
-         Loop, %windows%
-            if (DllCall("FindWindowEx", "ptr",windows%A_Index%, "ptr",0, "str","SHELLDLL_DefView", "ptr",0) != 0)
-               WorkerW := DllCall("FindWindowEx", "ptr",0, "ptr",windows%A_Index%, "str","WorkerW", "ptr",0)
-
-         if (WorkerW) {
-            this.Destroy()
-            this.hwnd := WorkerW
-            DllCall("SetWindowPos", "uint",WorkerW, "uint",1, "int",0, "int",0, "int",this.BitmapWidth, "int",this.BitmapHeight, "uint",0)
-            this.base.FreeMemory := ObjBindMethod(this, "DesktopFreeMemory")
-            this.base.Destroy := ObjBindMethod(this, "DesktopDestroy")
-            this.hdc := DllCall("GetDCEx", "ptr",WorkerW, "ptr",0, "int",0x403)
-            this.gfx := Gdip_GraphicsFromHDC(this.hdc)
-         }
-         return this
-      }
-
-      DesktopFreeMemory() {
-         ReleaseDC(this.hdc)
-         Gdip_DeleteGraphics(this.gfx)
-         return this
-      }
-
-      DesktopDestroy() {
-         this.FreeMemory()
-         DllCall("SendMessage", "ptr",WinExist("ahk_class Progman"), "uint",0x052C, "ptr",0x0000000D, "ptr",0)
-         DllCall("SendMessage", "ptr",WinExist("ahk_class Progman"), "uint",0x052C, "ptr",0x0000000D, "ptr",1)
-         return this
-      }
-
-      Rect() {
-         x1 := this.x1(), y1 := this.y1(), x2 := this.x2(), y2 := this.y2()
-         return (x2 > x1 && y2 > y1) ? [x1, y1, x2, y2] : ""
-      }
-
-      x1() {
-         return this.x
-      }
-
-      y1() {
-         return this.y
-      }
-
-      x2() {
-         return this.x + this.w
-      }
-
-      y2() {
-         return this.y + this.h
-      }
-
-      width() {
-         return this.w
-      }
-
-      height() {
-         return this.h
-      }
+   Callback(uMsg, wParam, lParam) {
+      return DllCall("DefWindowProc", "ptr",this, "uint",uMsg, "uptr",wParam, "ptr",lParam, "ptr") ; hWnd := this
    }
 
    class parse {
@@ -1077,8 +550,9 @@ class Graphics {
 
       outer[p:=""] {
          get {
-            if ((__outer := RegExReplace(A_ThisFunc, "(?i)^(.*)\..*\..*\.get$", "$1")) != A_ThisFunc)
-               Loop, Parse, __outer, .
+            static period := ".", _period := (A_AhkVersion < 2) ? period : "period"
+            if ((__outer := RegExReplace(this.__class, "^(.*)\..*$", "$1")) != this.__class)
+               Loop Parse, __outer, %_period%
                   outer := (A_Index=1) ? %A_LoopField% : outer[A_LoopField]
             return IsObject(outer) ? ((p) ? outer[p] : outer) : ((p) ? %p% : "")
          }
@@ -1387,7 +861,7 @@ class Graphics {
       }
 
       Debug(){
-         Tooltip % "function: " this.fn.2
+         debug := "function: " this.fn.2
             . "`nx: " this.x.2 "`ty: " this.y.2
             . "`nw: " this.w.2 "`th: " this.h.2
             . "`nx2: " this.xx.2 "`ty2: " this.yy.2
@@ -1398,23 +872,545 @@ class Graphics {
             . "`nw: " this.w.1 "`th: " this.h.1
             . "`nx2: " this.xx.1 "`ty2: " this.yy.1
             . "`nmx: " this.mx.1 "`tmy: " this.my.1
+         _debug := (A_AhkVersion < 2) ? debug : "debug"
+         Tooltip %_debug%
       }
    }
 
-   class Photo {
-   static extends := "object"
+   class renderer {
+
+      ; IO - Capture input and internalize environmental data.
+      IO(terms*) {
+         static A_Frequency, f := DllCall("QueryPerformanceFrequency", "int64*",A_Frequency)
+         DllCall("QueryPerformanceCounter", "int64*",A_PreciseTime)
+
+         this.PreciseTime := A_PreciseTime
+         this.TickCount := A_TickCount
+         this.Frequency := A_Frequency
+         this.ScreenWidth := A_ScreenWidth
+         this.ScreenHeight := A_ScreenHeight
+         this.IsAdmin := A_IsAdmin
+         return this.arg := terms
+      }
+
+      ; Duality #1 - Safe wrapper for the GDI+ library during object instantiation.
+      __New(terms*) {
+         this.IO(terms*)
+
+         global pToken
+         if !(this.outer.Startup())
+            if !(pToken)
+               if !(this.pToken := Gdip_Startup())
+                  throw Exception("Gdiplus failed to start. Please ensure you have gdiplus on your system.")
+
+         return this.Create(terms*)
+      }
+
+      ; Duality #1 - Safe wrapper for the GDI+ library during object garbage collection.
+      __Delete() {
+         if (this.hwnd)
+            this.Destroy()
+
+         global pToken
+         if (this.outer.pToken)
+            return this.outer.Shutdown()
+         if (pToken)
+            return
+         if (this.pToken)
+            return Gdip_Shutdown(this.pToken)
+      }
+
+      ; Duality #2 - Creates a window.
+      Create(title := "", window := "", activate := "") {
+         ; Retrieve original arguments upon window creation.
+         title    := (title != "")    ? title    : this.arg.1
+         window   := (window != "")   ? window   : this.arg.2
+         activate := (activate != "") ? activate : this.arg.3
+
+         ; Name the window by its inherited class. (Note: A_ThisFunc won't work.)
+         title := (title != "") ? title : RegExReplace(this.__class, "(.*\.)*(.*)$", "$2")
+
+         ; Tokenize window styles.
+         window := RegExReplace(window, "\s+", " ")
+
+
+
+         ;window := (window != "") ? window : " +AlwaysOnTop -Caption +ToolWindow"
+         ;window .= " +LastFound -DPIScale +E0x80000 +hwndhwnd"
+
+         ; Window Styles - https://docs.microsoft.com/en-us/windows/win32/winmsg/window-styles
+         ; Extended Window Styles - https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
+
+         WS_OVERLAPPED             :=        0x0
+         WS_TILED                  :=        0x0
+         WS_TABSTOP                :=    0x10000
+         WS_MAXIMIZEBOX            :=    0x10000
+         WS_MINIMIZEBOX            :=    0x20000
+         WS_GROUP                  :=    0x20000
+         WS_SIZEBOX                :=    0x40000
+         WS_THICKFRAME             :=    0x40000
+         WS_SYSMENU                :=    0x80000
+         WS_HSCROLL                :=   0x100000
+         WS_VSCROLL                :=   0x200000
+         WS_DLGFRAME               :=   0x400000
+         WS_BORDER                 :=   0x800000
+         WS_MAXIMIZE               :=  0x1000000
+         WS_CLIPCHILDREN           :=  0x2000000
+         WS_CLIPSIBLINGS           :=  0x4000000
+         WS_DISABLED               :=  0x8000000
+         WS_VISIBLE                := 0x10000000
+         WS_ICONIC                 := 0x20000000
+         WS_MINIMIZE               := 0x20000000
+         WS_CHILD                  := 0x40000000
+         WS_CHILDWINDOW            := 0x40000000
+         WS_POPUP                  := 0x80000000
+         WS_CAPTION                :=   0xC00000
+         WS_OVERLAPPEDWINDOW       :=   0xCF0000
+         WS_TILEDWINDOW            :=   0xCF0000
+         WS_POPUPWINDOW            := 0x80880000
+
+         WS_EX_LEFT                :=        0x0
+         WS_EX_LTRREADING          :=        0x0
+         WS_EX_RIGHTSCROLLBAR      :=        0x0
+         WS_EX_DLGMODALFRAME       :=        0x1
+         WS_EX_NOPARENTNOTIFY      :=        0x4
+         WS_EX_TOPMOST             :=        0x8
+         WS_EX_ACCEPTFILES         :=       0x10
+         WS_EX_TRANSPARENT         :=       0x20
+         WS_EX_MDICHILD            :=       0x40
+         WS_EX_TOOLWINDOW          :=       0x80
+         WS_EX_WINDOWEDGE          :=      0x100
+         WS_EX_CLIENTEDGE          :=      0x200
+         WS_EX_CONTEXTHELP         :=      0x400
+         WS_EX_RIGHT               :=     0x1000
+         WS_EX_RTLREADING          :=     0x2000
+         WS_EX_LEFTSCROLLBAR       :=     0x4000
+         WS_EX_CONTROLPARENT       :=    0x10000
+         WS_EX_STATICEDGE          :=    0x20000
+         WS_EX_APPWINDOW           :=    0x40000
+         WS_EX_LAYERED             :=    0x80000
+         WS_EX_NOINHERITLAYOUT     :=   0x100000
+         WS_EX_NOREDIRECTIONBITMAP :=   0x200000
+         WS_EX_LAYOUTRTL           :=   0x400000
+         WS_EX_COMPOSITED          :=  0x2000000
+         WS_EX_NOACTIVATE          :=  0x8000000
+         WS_EX_OVERLAPPEDWINDOW    :=      0x300
+         WS_EX_PALETTEWINDOW       :=      0x188
+
+         vWinStyle := WS_SYSMENU ; start off hidden with WS_VISIBLE off
+         vWinExStyle := WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED
+
+         ; The difference between the screen and the bitmap is that the screen defines the viewable area
+         ; while the bitmap defines the current size of the memory buffer. In practice the bitmap could be
+         ; a small part of the screen. Thus the DrawRaw() operations require the viewport width and height
+         ; calculated by 0.01*ScreenWidth and 0.01*ScreenHeight.
+         ; NOTE: DrawRaw() does not accept offsets, which are defined by BitmapLeft and BitmapTop.
+         this.BitmapLeft := 0
+         this.BitmapTop := 0
+         this.BitmapWidth := this.ScreenWidth
+         this.BitmapHeight := this.ScreenHeight
+
+         this.hwnd := DllCall("CreateWindowEx"
+            ,   "uint", vWinExStyle           ; dwExStyle
+            ,    "str", "AutoHotkeyGraphics"  ; lpClassName
+            ,    "str", this.title            ; lpWindowName
+            ,   "uint", vWinStyle             ; dwStyle
+            ,    "int", this.BitmapLeft       ; X
+            ,    "int", this.BitmapTop        ; Y
+            ,    "int", this.BitmapWidth      ; nWidth
+            ,    "int", this.BitmapHeight     ; nHeight
+            ,    "ptr", 0                     ; hWndParent
+            ,    "ptr", 0                     ; hMenu
+            ,    "ptr", 0                     ; hInstance
+            ,    "ptr", 0                     ; lpParam
+            ,    "ptr")
+
+         DllCall("ShowWindow", "ptr",this.hwnd, "int",(this.activateOnAdmin && !this.isDrawable()) ? 1 : 4)
+
+         return this.LoadMemory()
+      }
+
+      ; Duality #2 - Destroys a window.
+      Destroy() {
+         if (this.hdc)
+            this.FreeMemory()
+         DllCall("DestroyWindow", "ptr",this.hwnd)
+         this.hwnd := ""
+         return this
+      }
+
+      ; Duality #3 - Allocates the memory buffer.
+      LoadMemory() {
+         ; Creates a memory DC compatible with the application's current screen.
+         this.hdc := CreateCompatibleDC()
+
+         ; struct BITMAPINFOHEADER - https://docs.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-bitmapinfoheader
+         VarSetCapacity(bi, 40, 0)                              ; sizeof(bi) = 40
+            , NumPut(                     40, bi,  0,   "uint") ; Size
+            , NumPut(       this.BitmapWidth, bi,  4,   "uint") ; Width
+            , NumPut(     -this.BitmapHeight, bi,  8,    "int") ; Height - Negative so (0, 0) is top-left.
+            , NumPut(                      1, bi, 12, "ushort") ; Planes
+            , NumPut(                     32, bi, 14, "ushort") ; BitCount / BitsPerPixel
+
+         ; Creates a Device Independent Bitmap giving us a pointer to the pixels.
+         this.hbm := DllCall("CreateDIBSection", "ptr",this.hdc, "ptr",&bi, "uint",0, "ptr*",pBits, "ptr",0, "uint",0, "ptr")
+         this.obm := SelectObject(this.hdc, this.hbm)
+         this.gfx := Gdip_GraphicsFromHDC(this.hdc)
+
+         ; IMPORTANT: DIB pixels are pre-multiplied ARGB because that's how they're displayed on the screen.
+         ; enum PixelFormat - https://svn.eiffel.com/eiffelstudio/trunk/Src/library/wel/gdi/gdiplus/wel_gdip_pixel_format.e
+         this.pBits := pBits
+         this.pixelFormat := 0xE200B ; Format32bppPArgb
+         this.stride := 4 * this.BitmapWidth
+         this.size := this.stride * this.BitmapHeight
+         this.layers := {}
+
+         ;global PreciseTime
+         ;DllCall("QueryPerformanceCounter", "int64*",A_PreciseTime)
+         ;Tooltip % PreciseTime := (A_PreciseTime - this.PreciseTime) / this.Frequency
+
+         return this
+      }
+
+      ; Duality #3 - Frees the memory buffer.
+      FreeMemory() {
+         Gdip_DeleteGraphics(this.gfx)
+         SelectObject(this.hdc, this.obm)
+         DeleteObject(this.hbm)
+         DeleteDC(this.hdc)
+         this.gfx := this.obm := this.pBits := this.hbm := this.hdc := ""
+         return this
+      }
+
+      ; BROKEN - create a fixed size flag.
+      UpdateMemory(BitmapWidth := 0, BitmapHeight := 0) {
+         BitmapWidth := (BitmapWidth) ? BitmapWidth : A_ScreenWidth
+         BitmapHeight := (BitmapHeight) ? BitmapHeight : A_ScreenHeight
+
+         if (BitmapWidth == this.BitmapWidth && BitmapHeight == this.BitmapHeight)
+            return this
+
+         this.BitmapWidth := BitmapWidth
+         this.BitmapHeight := BitmapHeight
+         return this.FreeMemory().LoadMemory().Recover()
+      }
+
+      CompressMemory() {
+         ; Create.
+         hdc := CreateCompatibleDC(this.hdc)
+         hbm := CreateDIBSection(this.w, -this.h, hdc, 32, pBits)
+         obm := SelectObject(hdc, hbm)
+
+         ; Copy.
+         BitBlt(hdc, 0, 0, this.w, this.h, this.hdc, this.x, this.y)
+
+         ; Delete.
+         Gdip_DeleteGraphics(this.gfx)
+         SelectObject(this.hdc, this.obm)
+         DeleteObject(this.hbm)
+         DeleteDC(this.hdc)
+
+         ; Replace.
+         this.hdc := hdc
+         this.hbm := hbm
+         this.obm := obm
+         this.gfx := Gdip_GraphicsFromHDC(hdc)
+         this.pBits := pBits
+
+         ; Update
+         this.BitmapLeft := this.x
+         this.BitmapTop := this.y
+         this.BitmapWidth := this.w
+         this.BitmapHeight := this.h
+
+         this.w -= this.x
+         this.h -= this.y
+         this.x := 0
+         this.y := 0
+      }
+
+      DumpMemory() {
+         VarSetCapacity(pixels, this.size)
+         DllCall("RtlMoveMemory", "ptr",&pixels, "ptr",this.pBits, "uptr",this.size)
+         return pixels
+      }
+
+      DebugMemory() {
+         loop {
+            pixel := Format("0x{:08x}", NumGet(this.pBits, 4*(A_Index-1), "uint"))
+            _pixel := (A_AhkVersion < 2) ? pixel : "pixel"
+            MsgBox %_pixel%
+         }
+      }
+
+      BitmapFromBits() {
+         DllCall("gdiplus\GdipCreateBitmapFromScan0", "int",this.BitmapWidth, "int",this.ScreenHeight
+            , "int",this.stride, "uint",this.pixelFormat, "ptr",this.pBits, "ptr*",pBitmap)
+         return pBitmap
+      }
+
+      NewBitmap() {
+         DllCall("gdiplus\GdipCreateBitmapFromScan0", "int",this.BitmapWidth, "int",this.BitmapHeight
+            , "int",this.stride, "uint",this.pixelFormat, "ptr",this.pBits, "ptr*",pBitmap)
+         DllCall("gdiplus\GdipCloneBitmapAreaI", "int",0, "int",0, "int",this.BitmapWidth, "int",this.BitmapHeight
+            , "uint",0x26200a, "ptr",pBitmap, "ptr*",pBitmapDest)
+         Gdip_DisposeImage(pBitmap)
+         return pBitmapDest
+      }
+
+      BitmapFromScan0() {
+         this.SetCapacity("pixels", this.size)
+         this.Scan0 := this.GetAddress("pixels")
+         DllCall("RtlMoveMemory", "ptr",this.Scan0, "ptr",this.pBits, "uptr",this.size)
+         DllCall("gdiplus\GdipCreateBitmapFromScan0", "int",this.BitmapWidth, "int",this.BitmapHeight
+            , "int",this.stride, "uint",this.pixelFormat, "ptr",this.Scan0, "ptr*",pBitmap)
+         return pBitmap
+      }
+
+      Recover() {
+         layers := this.layers.maxIndex()
+         _layers := (A_AhkVersion < 2) ? layers : "layers"
+         loop %_layers%
+            this.Draw(this.layers[A_Index].1, this.layers[A_Index].2, this.layers[A_Index].3)
+         return this
+      }
+
+      Draw(data := "", styles*) {
+         this.Clear()
+         for i, style in styles
+            if (style != "") {
+               okay := true
+               break
+            }
+         if !(okay)
+            styles := this.styles
+         this.data := data
+         this.styles := styles
+         this.layers.push([data, styles*])
+         o := this.DrawRaw(this.gfx, this.ScreenWidth, this.ScreenHeight, data, styles*)
+         this.t := o.0
+         this.x := o.1
+         this.y := o.2
+         this.w := o.3
+         this.h := o.4
+         return this
+      }
+
+      Clear() {
+         if (this.final) {
+            DllCall("QueryPerformanceCounter", "int64*",A_PreciseTime)
+            this.PreciseTime := A_PreciseTime
+            this.TickCount := A_TickCount
+            this.layers := {}
+            this.x := this.y := this.w := this.h := "" ; not 0! BROKEN
+            Gdip_GraphicsClear(this.gfx)
+            this.final := "" ; BROKEN - should be right when final changes.
+         }
+
+         return this.UpdateMemory()
+      }
+
+      CRC32() {
+         return Format("0x{:08x}", DllCall("ntdll.dll\RtlComputeCrc32", "uint",0, "ptr",this.pBits, "uint",this.size, "uint"))
+      }
+
+      Finalize() {
+         this.final := 1
+         VarSetCapacity(puuid, 16, 0)
+         if !(DllCall("rpcrt4.dll\UuidCreate", "ptr", &puuid))
+            if !(DllCall("rpcrt4.dll\UuidToString", "ptr", &puuid, "uint*", suuid))
+               this.final := StrGet(suuid), DllCall("rpcrt4.dll\RpcStringFree", "uint*", suuid)
+         return this
+      }
+
+      Output(terms*) {
+         this.Draw(terms*)
+
+         if (!this.locked)
+            UpdateLayeredWindow(this.hwnd, this.hdc, this.BitmapLeft, this.BitmapTop, this.BitmapWidth, this.BitmapHeight)
+
+         this.Finalize()
+
+         if (this.t) {
+            blank := ObjBindMethod(this, "blank")
+            time := -1 * this.t
+            _blank := (A_AhkVersion < 2) ? blank : "blank"
+            _time := (A_AhkVersion < 2) ? time : "time"
+            SetTimer %_blank%, %_time%
+         }
+
+         return this
+      }
+
+      Blank() {
+         Gdip_GraphicsClear(this.gfx)
+         UpdateLayeredWindow(this.hwnd, this.hdc, this.BitmapLeft, this.BitmapTop, this.BitmapWidth, this.BitmapHeight)
+         return this
+      }
+
+      Wait(time) {
+         wait := time - (A_TickCount - this.TickCount)
+         _wait := (A_AhkVersion < 2) ? wait : "wait"
+         Sleep %_wait%
+         return this
+      }
+
+      Bitmap(x := "", y := "", w := "", h := "") {
+         x := (x != "") ? x : this.x
+         y := (y != "") ? y : this.y
+         w := (w != "") ? w : this.w
+         h := (h != "") ? h : this.h
+
+         pBitmap := Gdip_CreateBitmap(this.BitmapWidth, this.BitmapHeight)
+         pGraphics := Gdip_GraphicsFromImage(pBitmap)
+         layers := this.layers.maxIndex()
+         _layers := (A_AhkVersion < 2) ? layers : "layers"
+         loop %_layers%
+            this.DrawRaw(pGraphics, this.BitmapWidth, this.BitmapHeight, this.layers[A_Index].1, this.layers[A_Index].2, this.layers[A_Index].3)
+         Gdip_DeleteGraphics(pGraphics)
+         pBitmapCopy := Gdip_CloneBitmapArea(pBitmap, x, y, w, h)
+         Gdip_DisposeImage(pBitmap)
+         return pBitmapCopy ; Please dispose of this image responsibly.
+      }
+
+      Save(filename := "", quality := 90) {
+         filename := (filename ~= "i)\.(bmp|dib|rle|jpg|jpeg|jpe|jfif|gif|tif|tiff|png)$") ? filename
+                  : (filename != "") ? filename ".png" : this.title ".png"
+         pBitmap := this.Bitmap()
+         Gdip_SaveBitmapToFile(pBitmap, filename, quality)
+         Gdip_DisposeImage(pBitmap)
+         return this
+      }
+
+      ; 3) Just takes a picture of the screen!
+      Screenshot(filename := "", quality := 90) {
+         filename := (filename ~= "i)\.(bmp|dib|rle|jpg|jpeg|jpe|jfif|gif|tif|tiff|png)$") ? filename
+                  : (filename != "") ? filename ".png" : this.title ".png"
+         pBitmap := Gdip_BitmapFromScreen(this.x "|" this.y "|" this.w "|" this.h)
+         Gdip_SaveBitmapToFile(pBitmap, filename, quality)
+         Gdip_DisposeImage(pBitmap)
+         return this
+      }
+
+      isDrawable(win := "A") {
+         static WM_KEYDOWN := 0x100
+         static WM_KEYUP := 0x101
+         static vk_to_use := 7
+         ; Test whether we can send keystrokes to this window.
+         ; Use a virtual keycode which is unlikely to do anything:
+         _win := (A_AhkVersion < 2) ? win : "win"
+         PostMessage WM_KEYDOWN, vk_to_use, 0,, %_win%
+         if !ErrorLevel
+         {   ; Seems best to post key-up, in case the window is keeping track.
+           PostMessage WM_KEYUP, vk_to_use, 0xC0000000,, %_win%
+           return true
+         }
+         return false
+      }
+
+      Show(i := 8) {
+         DllCall("ShowWindow", "ptr",this.hwnd, "int",i)
+         return this
+      }
+
+      Hide() {
+         DllCall("ShowWindow", "ptr",this.hwnd, "int",0)
+         return this
+      }
+
+      Activate() {
+         DllCall("ShowWindow", "ptr",this.hwnd, "int",1)
+         return this
+      }
+
+      isVisible() {
+         return DllCall("IsWindowVisible", "ptr",this.hwnd)
+      }
+
+      ToggleVisible() {
+         return (this.isVisible()) ? this.Hide() : this.Show()
+      }
+      /*
+      AlwaysOnTop(s := -1) {
+         _dhw := A_DetectHiddenWindows
+         DetectHiddenWindows On
+         _s := (A_AhkVersion < 2) ? s : "s"
+         hwnd := "ahk_id" this.hwnd
+         _hwnd := (A_AhkVersion < 2) ? hwnd : "hwnd"
+         WinSet AlwaysOnTop, %_s%, %_hwnd%
+         DetectHiddenWindows %_dhw%
+         return this
+      }
+
+      Bottom() {
+         _dhw := A_DetectHiddenWindows
+         DetectHiddenWindows On
+         hwnd := "ahk_id" this.hwnd
+         _hwnd := (A_AhkVersion < 2) ? hwnd : "hwnd"
+         WinSet Bottom,, %_hwnd%
+         DetectHiddenWindows %_dhw%
+         return this
+      }
+
+      ClickThrough(s := -1) {
+         s := (s = -1) ? "^" : (s = 0) ? "-" : "+"
+         s .= "0x20"
+         _s := (A_AhkVersion < 2) ? s : "s"
+         _dhw := A_DetectHiddenWindows
+         DetectHiddenWindows On
+         hwnd := "ahk_id" this.hwnd
+         _hwnd := (A_AhkVersion < 2) ? hwnd : "hwnd"
+         WinSet ExStyle, %_s%, %_hwnd%
+         DetectHiddenWindows %_dhw%
+         return this
+      }
+      */
+      Rect() {
+         x1 := this.x1(), y1 := this.y1(), x2 := this.x2(), y2 := this.y2()
+         return (x2 > x1 && y2 > y1) ? [x1, y1, x2, y2] : ""
+      }
+
+      x1() {
+         return this.x
+      }
+
+      y1() {
+         return this.y
+      }
+
+      x2() {
+         return this.x + this.w
+      }
+
+      y2() {
+         return this.y + this.h
+      }
+
+      width() {
+         return this.w
+      }
+
+      height() {
+         return this.h
+      }
+   }
+
+   class ImageRenderer {
+   static extends := "renderer"
 
       _extends := this.__extends()
-      __extends(endofunctor := "") {
-         under := ((___ := this.outer[this.extends].__extends(true)) ? ___ : this.outer[this.extends])
-         (endofunctor) ? (this.base := under) : (this.base.base := under)
-         return (endofunctor) ? this : ""
+      __extends(subbundle := "") {
+         object := this.outer[this.extends]
+         bundle := ((object.haskey("__extends")) ? object.__extends(true) : object)
+         (subbundle) ? (this.base := bundle) : (this.base.base := bundle)
+         return (subbundle) ? this : ""
       }
 
       outer[p:=""] {
          get {
-            if ((__outer := RegExReplace(A_ThisFunc, "(?i)^(.*)\..*\..*\.get$", "$1")) != A_ThisFunc)
-               Loop, Parse, __outer, .
+            static period := ".", _period := (A_AhkVersion < 2) ? period : "period"
+            if ((__outer := RegExReplace(this.__class, "^(.*)\..*$", "$1")) != this.__class)
+               Loop Parse, __outer, %_period%
                   outer := (A_Index=1) ? %A_LoopField% : outer[A_LoopField]
             return IsObject(outer) ? ((p) ? outer[p] : outer) : ((p) ? %p% : "")
          }
@@ -1795,12 +1791,12 @@ class Graphics {
 
       Preprocess(cotype, image, crop := "", scale := "", terms*) {
          if (!this.hwnd) {
-            _photo := new this("Photo.Preprocess")
-            _photo.title := _photo.title "_" _photo.hwnd
-            DllCall("SetWindowText", "ptr",_photo.hwnd, "str",_photo.title)
-            coimage := _photo.Preprocess(cotype, image, crop, scale, terms*)
-            _photo.FreeMemory()
-            _photo := ""
+            renderer := new this("ImageRenderer.Preprocess")
+            renderer.title := renderer.title "_" renderer.hwnd
+            DllCall("SetWindowText", "ptr",renderer.hwnd, "str",renderer.title)
+            coimage := renderer.Preprocess(cotype, image, crop, scale, terms*)
+            renderer.FreeMemory()
+            renderer := ""
             return coimage
          }
 
@@ -1845,12 +1841,12 @@ class Graphics {
 
          ; Activate gdip basically LOL.
          if (!this.hwnd) {
-            _photo := new this("Photo.Equality")
-            _photo.title := _photo.title "_" _photo.hwnd
-            DllCall("SetWindowText", "ptr",_photo.hwnd, "str",_photo.title)
-            answer := _photo.Equality(images*)
-            _photo.FreeMemory()
-            _photo := ""
+            renderer := new this("ImageRenderer.Equality")
+            renderer.title := renderer.title "_" renderer.hwnd
+            DllCall("SetWindowText", "ptr",renderer.hwnd, "str",renderer.title)
+            answer := renderer.Equality(images*)
+            renderer.FreeMemory()
+            renderer := ""
             return answer
          }
 
@@ -1886,41 +1882,65 @@ class Graphics {
          if !IsObject(image)
             return
 
-         if ObjHasKey(image, "screen")
-            return "screen", image := image.screen
+         if ObjHasKey(image, "screen") {
+            image := image.screen
+            return "screen"
+         }
 
-         if ObjHasKey(image, "clipboard")
-            return "clipboard", image := image.clipboard
+         if ObjHasKey(image, "clipboard") {
+            image := image.clipboard
+            return "clipboard"
+         }
 
-         if ObjHasKey(image, "object")
-            return "object", image := image.object
+         if ObjHasKey(image, "object") {
+            image := image.object
+            return "object"
+         }
 
-         if ObjHasKey(image, "bitmap")
-            return "bitmap", image := image.bitmap
+         if ObjHasKey(image, "bitmap") {
+            image := image.bitmap
+            return "bitmap"
+         }
 
-         if ObjHasKey(image, "screenshot")
-            return "screenshot", image := image.screenshot
+         if ObjHasKey(image, "screenshot") {
+            image := image.screenshot
+            return "screenshot"
+         }
 
-         if ObjHasKey(image, "file")
-            return "file", image := image.file
+         if ObjHasKey(image, "file") {
+            image := image.file
+            return "file"
+         }
 
-         if ObjHasKey(image, "url")
-            return "url", image := image.url
+         if ObjHasKey(image, "url") {
+            image := image.url
+            return "url"
+         }
 
-         if ObjHasKey(image, "window")
-            return "window", image := image.window
+         if ObjHasKey(image, "window") {
+            image := image.window
+            return "window"
+         }
 
-         if ObjHasKey(image, "hwnd")
-            return "hwnd", image := image.hwnd
+         if ObjHasKey(image, "hwnd") {
+            image := image.hwnd
+            return "hwnd"
+         }
 
-         if ObjHasKey(image, "pBitmap")
-            return "pBitmap", image := image.pBitmap
+         if ObjHasKey(image, "pBitmap") {
+            image := image.pBitmap
+            return "pBitmap"
+         }
 
-         if ObjHasKey(image, "hBitmap")
-            return "hBitmap", image := image.hBitmap
+         if ObjHasKey(image, "hBitmap") {
+            image := image.hBitmap
+            return "hBitmap"
+         }
 
-         if ObjHasKey(image, "base64")
-            return "base64", image := image.base64
+         if ObjHasKey(image, "base64") {
+            image := image.base64
+            return "base64"
+         }
 
          return
       }
@@ -2157,8 +2177,8 @@ class Graphics {
 
          ; toCotype("screenshot", pBitmap, style)
          if (cotype = "screenshot") {
-            _photo := this.Render({"pBitmap":pBitmap}, terms.1)
-            return [_photo.x1(), _photo.y1(), _photo.width(), _photo.height()]
+            renderer := this.Render({"pBitmap":pBitmap}, terms.1)
+            return [renderer.x1(), renderer.y1(), renderer.width(), renderer.height()]
          }
 
          ; toCotype("file", pBitmap, filename, quality)
@@ -2203,7 +2223,8 @@ class Graphics {
             if !(nCount && nSize)
                throw Exception("Could not get a list of image codec encoders on this system.")
 
-            Loop % nCount
+            _nCount := (A_AhkVersion < 2) ? nCount : "nCount"
+            Loop %_nCount%
             {
                sString := StrGet(NumGet(ci, (idx := (48+7*A_PtrSize)*(A_Index-1))+32+3*A_PtrSize), "UTF-16")
                if InStr(sString, "*" Extension)
@@ -2213,13 +2234,15 @@ class Graphics {
             if !(pCodec := &ci+idx)
                throw Exception("Could not find matching encoder for specified file format.")
 
-            if Extension in .JPG,.JPEG,.JPE,.JFIF
+            if RegExMatch(Extension, "^\.(?i:JPG|JPEG|JPE|JFIF)$")
             {
                Quality := (Quality < 0) ? 0 : (Quality > 100) ? 90 : Quality ; Default JPEG is 90.
                DllCall("gdiplus\GdipGetEncoderParameterListSize", "ptr",pBitmap, "ptr",pCodec, "uint*",nSize)
                VarSetCapacity(EncoderParameters, nSize, 0)
                DllCall("gdiplus\GdipGetEncoderParameterList", "ptr",pBitmap, "ptr",pCodec, "uint",nSize, "ptr",&EncoderParameters)
-               Loop, % NumGet(EncoderParameters, "uint")
+               nCount := NumGet(EncoderParameters, "uint")
+      			N := (A_AhkVersion < 2) ? nCount : "nCount"
+      			Loop %N%
                {
                   elem := (24+A_PtrSize)*(A_Index-1) + 4 + (pad := A_PtrSize = 8 ? 4 : 0)
                   if (NumGet(EncoderParameters, elem+16, "uint") = 1) && (NumGet(EncoderParameters, elem+20, "uint") = 6)
@@ -2367,22 +2390,551 @@ class Graphics {
 
          return (url ~= "i)" regex) ? true : false
       }
-   } ; End of Image class.
+   } ; End of ImageRenderer class.
 
-   class Subtitle {
-   static extends := "object"
+   class PolygonRenderer {
+   static extends := "renderer"
 
       _extends := this.__extends()
-      __extends(endofunctor := "") {
-         under := ((___ := this.outer[this.extends].__extends(true)) ? ___ : this.outer[this.extends])
-         (endofunctor) ? (this.base := under) : (this.base.base := under)
-         return (endofunctor) ? this : ""
+      __extends(subbundle := "") {
+         object := this.outer[this.extends]
+         bundle := ((object.haskey("__extends")) ? object.__extends(true) : object)
+         (subbundle) ? (this.base := bundle) : (this.base.base := bundle)
+         return (subbundle) ? this : ""
       }
 
       outer[p:=""] {
          get {
-            if ((__outer := RegExReplace(A_ThisFunc, "(?i)^(.*)\..*\..*\.get$", "$1")) != A_ThisFunc)
-               Loop, Parse, __outer, .
+            static period := ".", _period := (A_AhkVersion < 2) ? period : "period"
+            if ((__outer := RegExReplace(this.__class, "^(.*)\..*$", "$1")) != this.__class)
+               Loop Parse, __outer, %_period%
+                  outer := (A_Index=1) ? %A_LoopField% : outer[A_LoopField]
+            return IsObject(outer) ? ((p) ? outer[p] : outer) : ((p) ? %p% : "")
+         }
+      }
+
+      activateOnAdmin := true, ScreenWidth := A_ScreenWidth, ScreenHeight := A_ScreenHeight
+
+      __New(title := "", terms*) {
+         global pToken
+         if !(this.outer.Startup())
+            if !(pToken)
+               if !(this.pToken := Gdip_Startup())
+                  throw Exception("Gdiplus failed to start. Please ensure you have gdiplus on your system.")
+
+         this.Create()
+
+         this.__screen := new this.outer.memory(this.ScreenWidth, this.ScreenHeight)
+         this.state := new this.outer.queue()
+         return this
+      }
+
+      Destroy() {
+         Gdip_DeleteGraphics(this.gfx)
+         SelectObject(this.hdc, this.obm)
+         DeleteObject(this.hbm)
+         DeleteDC(this.hdc)
+         this.gfx := this.obm := this.pBits := this.hbm := this.hdc := ""
+
+         this.__screen := ""
+         DllCall("DestroyWindow", "ptr",this.hwnd)
+         return this
+      }
+
+      Render(terms*) {
+         if !(this.hwnd)
+            return (new this).Render(terms*)
+
+         this.state.new(A_ThisFunc)
+
+         Gdip_GraphicsClear(this.__screen.gfx)
+
+         this.UpdateMemory()
+         this.Draw(terms*)
+
+         UpdateLayeredWindow(this.hwnd, this.hdc, 0, 0, this.ScreenWidth, this.ScreenHeight)
+
+         if (this.t) {
+            self_destruct := ObjBindMethod(this, "Destroy")
+            time := -1 * this.t
+            _self_destruct := (A_AhkVersion < 2) ? self_destruct : "self_destruct"
+            _time := (A_AhkVersion < 2) ? time : "time"
+            SetTimer %_self_destruct%, %_time%
+         }
+
+         ; Shift the layers.
+         this.state.layers.RemoveAt(1)
+         this.state.layers.2 := []
+
+         return this
+      }
+
+      Redraw(x, y, w, h) {
+         ;this.UpdateMemory()
+         Gdip_SetSmoothingMode(this.__screen.gfx, 4) ;Adds one clickable pixel to the edge.
+         pBrush := Gdip_BrushCreateSolid(this.color)
+
+         if (this.cache = 0) {
+            Gdip_GraphicsClear(this.__screen.gfx)
+            Gdip_FillRectangle(this.__screen.gfx, pBrush, x, y, w, h)
+         }
+         if (this.cache = 1) {
+            if (!this.state.identical)
+               this.__cache := ""
+
+            if (!this.__cache) {
+               this.__cache := new this.outer.memory(w + 1, h + 1)
+               Gdip_FillRectangle(this.__cache.gfx, pBrush, 0, 0, w, h)
+            }
+
+            Gdip_GraphicsClear(this.__screen.gfx)
+            BitBlt(this.__screen.hdc, x, y, w + 1, h + 1, this.__cache.hdc, 0, 0)
+         }
+         if (this.cache = 2) {
+            if (!this.state.identical)
+               this.__cache := ""
+
+            if (!this.__cache) {
+               this.__cache := new this.outer.memory(w + 1, h + 1)
+               Gdip_FillRectangle(this.__cache.gfx, pBrush, 0, 0, w, h)
+            }
+
+            Gdip_GraphicsClear(this.__screen.gfx)
+            StretchBlt(this.__screen.hdc, x, y, w + 1, h + 1, this.__cache.hdc, 0, 0, this.__cache.width, this.__cache.height)
+         }
+         UpdateLayeredWindow(this.hwnd, this.__screen.hdc, 0, 0, this.ScreenWidth, this.ScreenHeight)
+         Gdip_DeleteBrush(pBrush)
+      }
+
+      Paint(x, y, w, h, pGraphics) {
+         pBrush := Gdip_BrushCreateSolid(this.color)
+         Gdip_FillRectangle(pGraphics, pBrush, x, y, w, h)
+         Gdip_DeleteBrush(pBrush)
+      }
+
+      Draw(color := "", style := "") {
+
+         ; Note that only the second layer is drawn on. The first layer is the reference layer.
+         if (pGraphics == "") {
+            if (!this.state.layers.2.MaxIndex())
+               this.__buffer := new this.outer.memory(this.ScreenWidth, this.ScreenHeight)
+            pGraphics := this.__buffer.gfx
+         }
+
+
+         ; Retrieve last style if omitted. Reduce all whitespace to one space character.
+         style := !IsObject(style) ? RegExReplace(style, "\s+", " ") : style
+         style := (style == "") ? this.state.layers.2[this.state.layers.2.MaxIndex()].2 : style
+         this.state.layers.2.push([color, style, empty])
+
+
+
+         static q1 := "(?i)^.*?\b(?<!:|:\s)\b"
+         static q2 := "(?!(?>\([^()]*\)|[^()]*)*\))(:\s*)?\(?(?<value>(?<=\()([\s:#%_a-z\-\.\d]+|\([\s:#%_a-z\-\.\d]*\))*(?=\))|[#%_a-z\-\.\d]+).*$"
+
+         if IsObject(style) {
+            t  := (style.time != "")        ? style.time        : style.t
+            x  := (style.left != "")        ? style.left        : style.x
+            y  := (style.top != "")         ? style.top         : style.y
+            w  := (style.width != "")       ? style.width       : style.w
+            h  := (style.height != "")      ? style.height      : style.h
+            a  := (style.anchor != "")      ? style.anchor      : style.a
+            m  := (style.margin != "")      ? style.margin      : style.m
+            s  := (style.size != "")        ? style.size        : style.s
+            c  := (style.color != "")       ? style.color       : style.c
+            q  := (style.quality != "")     ? style.quality     : (style.q) ? style.q : style.InterpolationMode
+         } else {
+            t  := ((___ := RegExReplace(style, q1    "(t(ime)?)"          q2, "${value}")) != style) ? ___ : ""
+            x  := ((___ := RegExReplace(style, q1    "(x|left)"           q2, "${value}")) != style) ? ___ : ""
+            y  := ((___ := RegExReplace(style, q1    "(y|top)"            q2, "${value}")) != style) ? ___ : ""
+            w  := ((___ := RegExReplace(style, q1    "(w(idth)?)"         q2, "${value}")) != style) ? ___ : ""
+            h  := ((___ := RegExReplace(style, q1    "(h(eight)?)"        q2, "${value}")) != style) ? ___ : ""
+            a  := ((___ := RegExReplace(style, q1    "(a(nchor)?)"        q2, "${value}")) != style) ? ___ : ""
+            m  := ((___ := RegExReplace(style, q1    "(m(argin)?)"        q2, "${value}")) != style) ? ___ : ""
+            s  := ((___ := RegExReplace(style, q1    "(s(ize)?)"          q2, "${value}")) != style) ? ___ : ""
+            c  := ((___ := RegExReplace(style, q1    "(c(olor)?)"         q2, "${value}")) != style) ? ___ : ""
+            q  := ((___ := RegExReplace(style, q1    "(q(uality)?)"       q2, "${value}")) != style) ? ___ : ""
+         }
+
+         static times := "(?i)^\s*(\d+)\s*(ms|mil(li(second)?)?|s(ec(ond)?)?|m(in(ute)?)?|h(our)?|d(ay)?)?s?\s*$"
+         t  := ( t ~= times) ? RegExReplace( t, "\s", "") : 0 ; Default time is zero.
+         t  := ((___ := RegExReplace( t, "i)(\d+)(ms|mil(li(second)?)?)s?$", "$1")) !=  t) ? ___ *        1 : t
+         t  := ((___ := RegExReplace( t, "i)(\d+)s(ec(ond)?)?s?$"          , "$1")) !=  t) ? ___ *     1000 : t
+         t  := ((___ := RegExReplace( t, "i)(\d+)m(in(ute)?)?s?$"          , "$1")) !=  t) ? ___ *    60000 : t
+         t  := ((___ := RegExReplace( t, "i)(\d+)h(our)?s?$"               , "$1")) !=  t) ? ___ *  3600000 : t
+         t  := ((___ := RegExReplace( t, "i)(\d+)d(ay)?s?$"                , "$1")) !=  t) ? ___ * 86400000 : t
+
+         static valid := "(?i)^\s*(\-?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+)))\s*(%|pt|px|vh|vmin|vw)?\s*$"
+         static valid_positive := "(?i)^\s*((?:(?:\d+(?:\.\d*)?)|(?:\.\d+)))\s*(%|pt|px|vh|vmin|vw)?\s*$"
+
+         vw := 0.01 * this.ScreenWidth    ; 1% of viewport width.
+         vh := 0.01 * this.ScreenHeight   ; 1% of viewport height.
+         vmin := (vw < vh) ? vw : vh ; 1vw or 1vh, whichever is smaller.
+
+         ; Default = 0, LowQuality = 1, HighQuality = 2, Bilinear = 3
+         ; Bicubic = 4, NearestNeighbor = 5, HighQualityBilinear = 6, HighQualityBicubic = 7
+         q := (q >= 0 && q <= 7) ? q : 7       ; Default InterpolationMode is HighQualityBicubic.
+         Gdip_SetInterpolationMode(pGraphics, q)
+
+         w  := ( w ~= valid_positive) ? RegExReplace( w, "\s", "") : width ; Default width is image width.
+         w  := ( w ~= "i)(pt|px)$") ? SubStr( w, 1, -2) :  w
+         w  := ( w ~= "i)vw$") ? RegExReplace( w, "i)vw$", "") * vw :  w
+         w  := ( w ~= "i)vh$") ? RegExReplace( w, "i)vh$", "") * vh :  w
+         w  := ( w ~= "i)vmin$") ? RegExReplace( w, "i)vmin$", "") * vmin :  w
+         w  := ( w ~= "%$") ? RegExReplace( w, "%$", "") * 0.01 * width :  w
+
+         h  := ( h ~= valid_positive) ? RegExReplace( h, "\s", "") : height ; Default height is image height.
+         h  := ( h ~= "i)(pt|px)$") ? SubStr( h, 1, -2) :  h
+         h  := ( h ~= "i)vw$") ? RegExReplace( h, "i)vw$", "") * vw :  h
+         h  := ( h ~= "i)vh$") ? RegExReplace( h, "i)vh$", "") * vh :  h
+         h  := ( h ~= "i)vmin$") ? RegExReplace( h, "i)vmin$", "") * vmin :  h
+         h  := ( h ~= "%$") ? RegExReplace( h, "%$", "") * 0.01 * height :  h
+
+         ; If size is "auto" automatically downscale by a multiple of 2. Ex: 50%, 25%, 12.5%...
+         if (s = "auto") {
+            ; Determine what is smaller: declared width and height or screen width and height.
+            ; Since the declared w and h are overwritten by the size, they now determine the bounds.
+            ; Default bounds are the ScreenWidth and ScreenHeight, and can be decreased, never increased.
+            visible_w := (w > this.ScreenWidth) ? this.ScreenWidth : w
+            visible_h := (h > this.ScreenHeight) ? this.ScreenHeight : h
+            auto_w := (width > visible_w) ? width // visible_w + 1 : 1
+            auto_h := (height > visible_h) ? height // visible_h + 1 : 1
+            s := (auto_w > auto_h) ? (1 / auto_w) : (1 / auto_h)
+            w := width ; Since the width was overwritten, restore it to the default.
+            h := height ; w and h determine the bounds of the size.
+         }
+
+         s  := ( s ~= valid_positive) ? RegExReplace( s, "\s", "") : 1 ; Default size is 1.00.
+         s  := ( s ~= "i)(pt|px)$") ? SubStr( s, 1, -2) :  s
+         s  := ( s ~= "i)vw$") ? RegExReplace( s, "i)vw$", "") * vw / width :  s
+         s  := ( s ~= "i)vh$") ? RegExReplace( s, "i)vh$", "") * vh / height:  s
+         s  := ( s ~= "i)vmin$") ? RegExReplace( s, "i)vmin$", "") * vmin / minimum :  s
+         s  := ( s ~= "%$") ? RegExReplace( s, "%$", "") * 0.01 :  s
+
+         ; Scale width and height.
+         w := Floor(w * s)
+         h := Floor(h * s)
+
+         a  := RegExReplace( a, "\s", "")
+         a  := (a ~= "i)top" && a ~= "i)left") ? 1 : (a ~= "i)top" && a ~= "i)cent(er|re)") ? 2
+            : (a ~= "i)top" && a ~= "i)right") ? 3 : (a ~= "i)cent(er|re)" && a ~= "i)left") ? 4
+            : (a ~= "i)cent(er|re)" && a ~= "i)right") ? 6 : (a ~= "i)bottom" && a ~= "i)left") ? 7
+            : (a ~= "i)bottom" && a ~= "i)cent(er|re)") ? 8 : (a ~= "i)bottom" && a ~= "i)right") ? 9
+            : (a ~= "i)top") ? 2 : (a ~= "i)left") ? 4 : (a ~= "i)right") ? 6 : (a ~= "i)bottom") ? 8
+            : (a ~= "i)cent(er|re)") ? 5 : (a ~= "^[1-9]$") ? a : 1 ; Default anchor is top-left.
+
+         a  := ( x ~= "i)left") ? 1+((( a-1)//3)*3) : ( x ~= "i)cent(er|re)") ? 2+((( a-1)//3)*3) : ( x ~= "i)right") ? 3+((( a-1)//3)*3) :  a
+         a  := ( y ~= "i)top") ? 1+(mod( a-1,3)) : ( y ~= "i)cent(er|re)") ? 4+(mod( a-1,3)) : ( y ~= "i)bottom") ? 7+(mod( a-1,3)) :  a
+
+         ; Convert English words to numbers. Don't mess with these values any further.
+         x  := ( x ~= "i)left") ? 0 : (x ~= "i)cent(er|re)") ? 0.5*this.ScreenWidth : (x ~= "i)right") ? this.ScreenWidth : x
+         y  := ( y ~= "i)top") ? 0 : (y ~= "i)cent(er|re)") ? 0.5*this.ScreenHeight : (y ~= "i)bottom") ? this.ScreenHeight : y
+
+         ; Validate x and y, convert to pixels.
+         x  := ( x ~= valid) ? RegExReplace( x, "\s", "") : 0 ; Default x is 0.
+         x  := ( x ~= "i)(pt|px)$") ? SubStr( x, 1, -2) :  x
+         x  := ( x ~= "i)(%|vw)$") ? RegExReplace( x, "i)(%|vw)$", "") * vw :  x
+         x  := ( x ~= "i)vh$") ? RegExReplace( x, "i)vh$", "") * vh :  x
+         x  := ( x ~= "i)vmin$") ? RegExReplace( x, "i)vmin$", "") * vmin :  x
+
+         y  := ( y ~= valid) ? RegExReplace( y, "\s", "") : 0 ; Default y is 0.
+         y  := ( y ~= "i)(pt|px)$") ? SubStr( y, 1, -2) :  y
+         y  := ( y ~= "i)vw$") ? RegExReplace( y, "i)vw$", "") * vw :  y
+         y  := ( y ~= "i)(%|vh)$") ? RegExReplace( y, "i)(%|vh)$", "") * vh :  y
+         y  := ( y ~= "i)vmin$") ? RegExReplace( y, "i)vmin$", "") * vmin :  y
+
+         ; Modify x and y values with the anchor, so that the image has a new point of origin.
+         x  -= (mod(a-1,3) == 0) ? 0 : (mod(a-1,3) == 1) ? w/2 : (mod(a-1,3) == 2) ? w : 0
+         y  -= (((a-1)//3) == 0) ? 0 : (((a-1)//3) == 1) ? h/2 : (((a-1)//3) == 2) ? h : 0
+
+         ; Prevent half-pixel rendering and keep image sharp.
+         x := Floor(x)
+         y := Floor(y)
+
+         m := this.outer.parse.margin_and_padding(m, vw, vh)
+
+         ; Calculate border using margin.
+         _x  := x - (m.4)
+         _y  := y - (m.1)
+         _w  := w + (m.2 + m.4)
+         _h  := h + (m.1 + m.3)
+
+         ; Save size.
+         this.x := _x
+         this.y := _y
+         this.w := _w
+         this.h := _h
+
+         if (image != "") {
+            ; Draw border.
+            c := this.outer.parse.color(c, 0xFF000000) ; Default color is black.
+            pBrush := Gdip_BrushCreateSolid(c)
+            Gdip_FillRectangle(pGraphics, pBrush, _x, _y, _w, _h)
+            Gdip_DeleteBrush(pBrush)
+            ; Draw image.
+            Gdip_DrawImage(pGraphics, pBitmap, x, y, w, h, 0, 0, width, height)
+         }
+
+         ; POINTF
+         Gdip_SetSmoothingMode(pGraphics, 4)  ; None = 3, AntiAlias = 4
+         pPen := Gdip_CreatePen(0xFFFF0000, 1)
+
+         for i, polygon in polygons {
+            DllCall("gdiplus\GdipCreatePath", "int",1, "ptr*",pPath)
+            VarSetCapacity(pointf, 8*polygons[i].polygon.maxIndex(), 0)
+            for j, point in polygons[i].polygon {
+               NumPut(point.x*s + x, pointf, 8*(A_Index-1) + 0, "float")
+               NumPut(point.y*s + y, pointf, 8*(A_Index-1) + 4, "float")
+            }
+            DllCall("gdiplus\GdipAddPathPolygon", "ptr",pPath, "ptr",&pointf, "uint",polygons[i].polygon.maxIndex())
+            DllCall("gdiplus\GdipDrawPath", "ptr",pGraphics, "ptr",pPen, "ptr",pPath) ; DRAWING!
+         }
+
+         Gdip_DeletePen(pPen)
+
+         if (type != "pBitmap")
+            Gdip_DisposeImage(pBitmap)
+
+         return (pGraphics == "") ? this : ""
+      }
+
+      MouseGetPos(ByRef x_mouse, ByRef y_mouse) {
+         _cmm := A_CoordModeMouse
+         CoordMode Mouse, Screen
+         MouseGetPos x_mouse, y_mouse
+         CoordMode Mouse, %_cmm%
+      }
+
+      Origin() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
+         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
+            this.x_last := x_mouse, this.y_last := y_mouse
+
+            x := x_mouse
+            y := y_mouse
+            w := 1
+            h := 1
+            ;stabilize x/y corrdinates in window spy.
+
+            this.state.queue(x, y, w, h, xx, yy, mx, my)
+            this.Redraw(x, y, w, h)
+         }
+      }
+
+      Drag() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
+         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
+            this.x_last := x_mouse, this.y_last := y_mouse
+
+            x_origin := (this.state.mx.1) ? this.state.x.1 : this.state.xx.1
+            y_origin := (this.state.my.1) ? this.state.y.1 : this.state.yy.1
+
+            mx := (x_mouse > x_origin) ? true : false
+            my := (y_mouse > y_origin) ? true : false
+
+            x := (mx) ? x_origin : x_mouse
+            y := (my) ? y_origin : y_mouse
+            xx := (mx) ? x_mouse : x_origin
+            yy := (my) ? y_mouse : y_origin
+            ;a := (xr && yr) ? "top left" : (xr && !yr) ? "bottom left" : (!xr && yr) ? "top right" : "bottom right"
+            ;q := (xr && yr) ? "bottom right" : (xr && !yr) ? "top right" : (!xr && yr) ? "bottom left" : "top left"
+
+            this.state.queue(x, y, w, h, xx, yy, mx, my)
+            this.Redraw(x, y, w, h)
+         }
+      }
+
+      Move() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
+         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
+            this.x_last := x_mouse, this.y_last := y_mouse
+
+            dx := x_mouse - this.state.x_mouse
+            dy := y_mouse - this.state.y_mouse
+            x := this.state.x.1 + dx
+            y := this.state.y.1 + dy
+
+            this.state.queue(x, y, w, h, xx, yy, mx, my)
+            this.Redraw(x, y, w, h)
+         }
+      }
+
+      Hover() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
+         this.state.queue()
+      }
+
+      Recover() {
+         Gdip_SetSmoothingMode(this.gfx, 4)
+         return this
+      }
+
+      ChangeColor(color) {
+         this.color := color
+         Gdip_DeleteBrush(this.pBrush)
+         this.pBrush := Gdip_BrushCreateSolid(this.color)
+         this.Redraw(this.state.x.2, this.state.y.2, this.state.w.2, this.state.h.2)
+      }
+
+      ResizeCorners() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
+         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
+            this.x_last := x_mouse, this.y_last := y_mouse
+
+            xr := this.state.x_mouse - this.state.x.1 - (this.state.w.1 / 2)
+            yr := this.state.y.1 - this.state.y_mouse + (this.state.h.1 / 2) ; Keep Change Change
+            dx := x_mouse - this.state.x_mouse
+            dy := y_mouse - this.state.y_mouse
+
+            if (xr < -1 && yr > 1) {
+               r := "top left"
+               x := this.state.x.1 + dx
+               y := this.state.y.1 + dy
+               w := this.state.w.1 - dx
+               h := this.state.h.1 - dy
+            }
+            if (xr >= -1 && yr > 1) {
+               r := "top right"
+               x := this.state.x.1
+               y := this.state.y.1 + dy
+               w := this.state.w.1 + dx
+               h := this.state.h.1 - dy
+            }
+            if (xr < -1 && yr <= 1) {
+               r := "bottom left"
+               x := this.state.x.1 + dx
+               y := this.state.y.1
+               w := this.state.w.1 - dx
+               h := this.state.h.1 + dy
+            }
+            if (xr >= -1 && yr <= 1) {
+               r := "bottom right"
+               x := this.state.x.1
+               y := this.state.y.1
+               w := this.state.w.1 + dx
+               h := this.state.h.1 + dy
+            }
+
+            this.state.queue(x, y, w, h, xx, yy, mx, my)
+            this.Redraw(x, y, w, h)
+         }
+      }
+
+      ; This works by finding the line equations of the diagonals of the rectangle.
+      ; To identify the quadrant the cursor is located in, the while loop compares it's y value
+      ; with the function line values f(x) = m * xr and y = -m * xr.
+      ; So if yr is below both theoretical y values, then we know it's in the bottom quadrant.
+      ; Be careful with this code, it converts the y plane inversely to match the Decartes tradition.
+
+      ; Safety features include checking for past values to prevent flickering
+      ; Sleep statements are required in every while loop.
+
+      ResizeEdges() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
+         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
+            this.x_last := x_mouse, this.y_last := y_mouse
+
+            m := -(this.state.h.1 / this.state.w.1)                              ; slope (dy/dx)
+            xr := this.state.x_mouse - this.state.x.1 - (this.state.w.1 / 2)           ; draw a line across the center
+            yr := this.state.y.1 - this.state.y_mouse + (this.state.h.1 / 2)           ; draw a vertical line halfing it
+            dx := x_mouse - this.state.x_mouse
+            dy := y_mouse - this.state.y_mouse
+
+            if (m * xr >= yr && yr > -m * xr)
+               r := "left",   x := this.state.x.1 + dx, w := this.state.w.1 - dx
+            if (m * xr < yr && yr > -m * xr)
+               r := "top",    y := this.state.y.1 + dy, h := this.state.h.1 - dy
+            if (m * xr < yr && yr <= -m * xr)
+               r := "right",  w := this.state.w.1 + dx
+            if (m * xr >= yr && yr <= -m * xr)
+               r := "bottom", h := this.state.h.1 + dy
+
+            this.state.queue(x, y, w, h, xx, yy, mx, my)
+            this.Redraw(x, y, w, h)
+         }
+      }
+
+      isMouseInside() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         return (x_mouse >= this.state.x.2 && x_mouse <= this.state.xx.2
+            && y_mouse >= this.state.y.2 && y_mouse <= this.state.yy.2)
+      }
+
+      isMouseOutside() {
+         return !this.isMouseInside()
+      }
+
+      isMouseOnCorner() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         return (x_mouse == this.state.x.2 || x_mouse == this.state.xx.2)
+            && (y_mouse == this.state.y.2 || y_mouse == this.state.yy.2)
+      }
+
+      isMouseOnEdge() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         return ((x_mouse >= this.state.x.2 && x_mouse <= this.state.xx.2)
+            && (y_mouse == this.state.y.2 || y_mouse == this.state.yy.2))
+            OR ((y_mouse >= this.state.y.2 && y_mouse <= this.state.yy.2)
+            && (x_mouse == this.state.x.2 || x_mouse == this.state.xx.2))
+      }
+
+      isMouseStopped() {
+         this.MouseGetPos(x_mouse, y_mouse)
+         return x_mouse == this.x_last && y_mouse == this.y_last
+      }
+
+      ScreenshotCoordinates() {
+         return (this.state.w.2 > 0 && this.state.h.2 > 0)
+            ? (this.state.x.2 "|" this.state.y.2 "|" this.state.w.2 "|" this.state.h.2) : ""
+      }
+
+      x1() {
+         return this.state.x.2
+      }
+
+      y1() {
+         return this.state.y.2
+      }
+
+      x2() {
+         return this.state.xx.2
+      }
+
+      y2() {
+         return this.state.yy.2
+      }
+
+      width() {
+         return this.state.w.2
+      }
+
+      height() {
+         return this.state.h.2
+      }
+   } ; End of PolygonRenderer class.
+
+   class TextRenderer {
+   static extends := "renderer"
+
+      _extends := this.__extends()
+      __extends(subbundle := "") {
+         object := this.outer[this.extends]
+         bundle := ((object.haskey("__extends")) ? object.__extends(true) : object)
+         (subbundle) ? (this.base := bundle) : (this.base.base := bundle)
+         return (subbundle) ? this : ""
+      }
+
+      outer[p:=""] {
+         get {
+            static period := ".", _period := (A_AhkVersion < 2) ? period : "period"
+            if ((__outer := RegExReplace(this.__class, "^(.*)\..*$", "$1")) != this.__class)
+               Loop Parse, __outer, %_period%
                   outer := (A_Index=1) ? %A_LoopField% : outer[A_LoopField]
             return IsObject(outer) ? ((p) ? outer[p] : outer) : ((p) ? %p% : "")
          }
@@ -2530,7 +3082,7 @@ class Graphics {
          s  := (s ~= "i)(%|vmin)$") ? RegExReplace(s, "i)(%|vmin)$", "") * vmin : s  ; Relative to viewport minimum.
 
          ; Get Bold, Italic, Underline, NoWrap, and Justification of text.
-         style += (b) ? 1 : 0         ; bold
+         style := (b) ? 1 : 0         ; bold
          style += (i) ? 2 : 0         ; italic
          style += (u) ? 4 : 0         ; underline
          style += (strikeout) ? 8 : 0 ; strikeout, not implemented.
@@ -2551,9 +3103,11 @@ class Graphics {
          Gdip_SetStringFormatAlign(hFormat, j)  ; Left = 0, Center = 1, Right = 2
 
          ; Simulate string width and height. This will get the exact width and height of the text.
-         VarSetCapacity(RectF, 16, 0)            ; sizeof(RectF) = 16
-            , NumPut(   _w, RectF,  8,  "float") ; Width
-            , NumPut(   _h, RectF, 12,  "float") ; Height
+         VarSetCapacity(RectF, 16, 0)       ; sizeof(RectF) = 16
+         if (_w != "")
+            NumPut(_w, RectF,  8,  "float") ; Width
+         if (_h != "")
+            NumPut(_h, RectF, 12,  "float") ; Height
          DllCall("gdiplus\GdipMeasureString"
                   ,    "ptr", pGraphics
                   ,   "wstr", text
@@ -2827,7 +3381,9 @@ class Graphics {
                pPenGlow := Gdip_CreatePen(Format("0x{:02X}",((o.4 & 0xFF000000) >> 24)/o.3) . Format("{:06X}",(o.4 & 0x00FFFFFF)), 1)
                DllCall("gdiplus\GdipSetPenLineJoin", "ptr",pPenGlow, "uint",2)
 
-               loop % o.3
+               o3 := o.3
+               _o3 := (A_AhkVersion < 2) ? o3 : "o3"
+               loop %_o3%
                {
                   DllCall("gdiplus\GdipSetPenWidth", "ptr",pPenGlow, "float",o.1 + 2*A_Index)
                   DllCall("gdiplus\GdipDrawPath", "ptr",pGraphics, "ptr",pPenGlow, "ptr",pPath) ; DRAWING!
@@ -2932,527 +3488,7 @@ class Graphics {
 
          return {0:t_bound, 1:x_bound, 2:y_bound, 3:w_bound, 4:h_bound}
       }
-   } ; End of Subtitle class.
-
-   class Vector {
-   static extends := "object"
-
-      _extends := this.__extends()
-      __extends(endofunctor := "") {
-         under := ((___ := this.outer[this.extends].__extends(true)) ? ___ : this.outer[this.extends])
-         (endofunctor) ? (this.base := under) : (this.base.base := under)
-         return (endofunctor) ? this : ""
-      }
-
-      outer[p:=""] {
-         get {
-            if ((__outer := RegExReplace(A_ThisFunc, "(?i)^(.*)\..*\..*\.get$", "$1")) != A_ThisFunc)
-               Loop, Parse, __outer, .
-                  outer := (A_Index=1) ? %A_LoopField% : outer[A_LoopField]
-            return IsObject(outer) ? ((p) ? outer[p] : outer) : ((p) ? %p% : "")
-         }
-      }
-
-      activateOnAdmin := true, ScreenWidth := A_ScreenWidth, ScreenHeight := A_ScreenHeight
-
-      __New(title := "", terms*) {
-         global pToken
-         if !(this.outer.Startup())
-            if !(pToken)
-               if !(this.pToken := Gdip_Startup())
-                  throw Exception("Gdiplus failed to start. Please ensure you have gdiplus on your system.")
-
-         Gui, New, +LastFound +AlwaysOnTop -Caption -DPIScale +E0x80000 +ToolWindow +hwndhwnd
-         ;DllCall("ShowWindow", "ptr",hwnd, "int",(this.activateOnAdmin && !this.isDrawable()) ? 1 : 4)
-         Gui, Show, % (this.activateOnAdmin && !this.isDrawable()) ? "" : "NoActivate"
-         this.hwnd := hwnd
-         this.title := (title != "") ? title : RegExReplace(this.__class, "(.*\.)*(.*)$", "$2") "_" this.hwnd
-         DllCall("SetWindowText", "ptr",this.hwnd, "str",this.title)
-         this.__screen := new this.outer.memory(this.ScreenWidth, this.ScreenHeight)
-         this.state := new this.outer.queue()
-         return this
-      }
-
-      Destroy() {
-         this.__screen := ""
-         DllCall("DestroyWindow", "ptr",this.hwnd)
-         return this
-      }
-
-      Render(terms*) {
-         if !(this.hwnd)
-            return (new this).Render(terms*)
-
-         this.state.new(A_ThisFunc)
-
-         Gdip_GraphicsClear(this.__screen.gfx)
-
-         this.UpdateMemory()
-         this.Draw(terms*)
-
-         UpdateLayeredWindow(this.hwnd, this.hdc, 0, 0, this.ScreenWidth, this.ScreenHeight)
-
-         if (this.t) {
-            self_destruct := ObjBindMethod(this, "Destroy")
-            SetTimer, % self_destruct, % -1 * this.t
-         }
-
-         ; Shift the layers.
-         this.state.layers.RemoveAt(1)
-         this.state.layers.2 := []
-
-         return this
-      }
-
-      Redraw(x, y, w, h) {
-         ;this.UpdateMemory()
-         Gdip_SetSmoothingMode(this.__screen.gfx, 4) ;Adds one clickable pixel to the edge.
-         pBrush := Gdip_BrushCreateSolid(this.color)
-
-         if (this.cache = 0) {
-            Gdip_GraphicsClear(this.__screen.gfx)
-            Gdip_FillRectangle(this.__screen.gfx, pBrush, x, y, w, h)
-         }
-         if (this.cache = 1) {
-            if (!this.state.identical)
-               this.__cache := ""
-
-            if (!this.__cache) {
-               this.__cache := new this.outer.memory(w + 1, h + 1)
-               Gdip_FillRectangle(this.__cache.gfx, pBrush, 0, 0, w, h)
-            }
-
-            Gdip_GraphicsClear(this.__screen.gfx)
-            BitBlt(this.__screen.hdc, x, y, w + 1, h + 1, this.__cache.hdc, 0, 0)
-         }
-         if (this.cache = 2) {
-            if (!this.state.identical)
-               this.__cache := ""
-
-            if (!this.__cache) {
-               this.__cache := new this.outer.memory(w + 1, h + 1)
-               Gdip_FillRectangle(this.__cache.gfx, pBrush, 0, 0, w, h)
-            }
-
-            Gdip_GraphicsClear(this.__screen.gfx)
-            StretchBlt(this.__screen.hdc, x, y, w + 1, h + 1, this.__cache.hdc, 0, 0, this.__cache.width, this.__cache.height)
-         }
-         UpdateLayeredWindow(this.hwnd, this.__screen.hdc, 0, 0, this.ScreenWidth, this.ScreenHeight)
-         Gdip_DeleteBrush(pBrush)
-      }
-
-      Paint(x, y, w, h, pGraphics) {
-         pBrush := Gdip_BrushCreateSolid(this.color)
-         Gdip_FillRectangle(pGraphics, pBrush, x, y, w, h)
-         Gdip_DeleteBrush(pBrush)
-      }
-
-      Draw(color := "", style := "") {
-
-         ; Note that only the second layer is drawn on. The first layer is the reference layer.
-         if (pGraphics == "") {
-            if (!this.state.layers.2.MaxIndex())
-               this.__buffer := new this.outer.memory(this.ScreenWidth, this.ScreenHeight)
-            pGraphics := this.__buffer.gfx
-         }
-
-
-         ; Retrieve last style if omitted. Reduce all whitespace to one space character.
-         style := !IsObject(style) ? RegExReplace(style, "\s+", " ") : style
-         style := (style == "") ? this.state.layers.2[this.state.layers.2.MaxIndex()].2 : style
-         this.state.layers.2.push([color, style, empty])
-
-
-
-         static q1 := "(?i)^.*?\b(?<!:|:\s)\b"
-         static q2 := "(?!(?>\([^()]*\)|[^()]*)*\))(:\s*)?\(?(?<value>(?<=\()([\s:#%_a-z\-\.\d]+|\([\s:#%_a-z\-\.\d]*\))*(?=\))|[#%_a-z\-\.\d]+).*$"
-
-         if IsObject(style) {
-            t  := (style.time != "")        ? style.time        : style.t
-            x  := (style.left != "")        ? style.left        : style.x
-            y  := (style.top != "")         ? style.top         : style.y
-            w  := (style.width != "")       ? style.width       : style.w
-            h  := (style.height != "")      ? style.height      : style.h
-            a  := (style.anchor != "")      ? style.anchor      : style.a
-            m  := (style.margin != "")      ? style.margin      : style.m
-            s  := (style.size != "")        ? style.size        : style.s
-            c  := (style.color != "")       ? style.color       : style.c
-            q  := (style.quality != "")     ? style.quality     : (style.q) ? style.q : style.InterpolationMode
-         } else {
-            t  := ((___ := RegExReplace(style, q1    "(t(ime)?)"          q2, "${value}")) != style) ? ___ : ""
-            x  := ((___ := RegExReplace(style, q1    "(x|left)"           q2, "${value}")) != style) ? ___ : ""
-            y  := ((___ := RegExReplace(style, q1    "(y|top)"            q2, "${value}")) != style) ? ___ : ""
-            w  := ((___ := RegExReplace(style, q1    "(w(idth)?)"         q2, "${value}")) != style) ? ___ : ""
-            h  := ((___ := RegExReplace(style, q1    "(h(eight)?)"        q2, "${value}")) != style) ? ___ : ""
-            a  := ((___ := RegExReplace(style, q1    "(a(nchor)?)"        q2, "${value}")) != style) ? ___ : ""
-            m  := ((___ := RegExReplace(style, q1    "(m(argin)?)"        q2, "${value}")) != style) ? ___ : ""
-            s  := ((___ := RegExReplace(style, q1    "(s(ize)?)"          q2, "${value}")) != style) ? ___ : ""
-            c  := ((___ := RegExReplace(style, q1    "(c(olor)?)"         q2, "${value}")) != style) ? ___ : ""
-            q  := ((___ := RegExReplace(style, q1    "(q(uality)?)"       q2, "${value}")) != style) ? ___ : ""
-         }
-
-         static times := "(?i)^\s*(\d+)\s*(ms|mil(li(second)?)?|s(ec(ond)?)?|m(in(ute)?)?|h(our)?|d(ay)?)?s?\s*$"
-         t  := ( t ~= times) ? RegExReplace( t, "\s", "") : 0 ; Default time is zero.
-         t  := ((___ := RegExReplace( t, "i)(\d+)(ms|mil(li(second)?)?)s?$", "$1")) !=  t) ? ___ *        1 : t
-         t  := ((___ := RegExReplace( t, "i)(\d+)s(ec(ond)?)?s?$"          , "$1")) !=  t) ? ___ *     1000 : t
-         t  := ((___ := RegExReplace( t, "i)(\d+)m(in(ute)?)?s?$"          , "$1")) !=  t) ? ___ *    60000 : t
-         t  := ((___ := RegExReplace( t, "i)(\d+)h(our)?s?$"               , "$1")) !=  t) ? ___ *  3600000 : t
-         t  := ((___ := RegExReplace( t, "i)(\d+)d(ay)?s?$"                , "$1")) !=  t) ? ___ * 86400000 : t
-
-         static valid := "(?i)^\s*(\-?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+)))\s*(%|pt|px|vh|vmin|vw)?\s*$"
-         static valid_positive := "(?i)^\s*((?:(?:\d+(?:\.\d*)?)|(?:\.\d+)))\s*(%|pt|px|vh|vmin|vw)?\s*$"
-
-         vw := 0.01 * this.ScreenWidth    ; 1% of viewport width.
-         vh := 0.01 * this.ScreenHeight   ; 1% of viewport height.
-         vmin := (vw < vh) ? vw : vh ; 1vw or 1vh, whichever is smaller.
-
-         ; Default = 0, LowQuality = 1, HighQuality = 2, Bilinear = 3
-         ; Bicubic = 4, NearestNeighbor = 5, HighQualityBilinear = 6, HighQualityBicubic = 7
-         q := (q >= 0 && q <= 7) ? q : 7       ; Default InterpolationMode is HighQualityBicubic.
-         Gdip_SetInterpolationMode(pGraphics, q)
-
-         w  := ( w ~= valid_positive) ? RegExReplace( w, "\s", "") : width ; Default width is image width.
-         w  := ( w ~= "i)(pt|px)$") ? SubStr( w, 1, -2) :  w
-         w  := ( w ~= "i)vw$") ? RegExReplace( w, "i)vw$", "") * vw :  w
-         w  := ( w ~= "i)vh$") ? RegExReplace( w, "i)vh$", "") * vh :  w
-         w  := ( w ~= "i)vmin$") ? RegExReplace( w, "i)vmin$", "") * vmin :  w
-         w  := ( w ~= "%$") ? RegExReplace( w, "%$", "") * 0.01 * width :  w
-
-         h  := ( h ~= valid_positive) ? RegExReplace( h, "\s", "") : height ; Default height is image height.
-         h  := ( h ~= "i)(pt|px)$") ? SubStr( h, 1, -2) :  h
-         h  := ( h ~= "i)vw$") ? RegExReplace( h, "i)vw$", "") * vw :  h
-         h  := ( h ~= "i)vh$") ? RegExReplace( h, "i)vh$", "") * vh :  h
-         h  := ( h ~= "i)vmin$") ? RegExReplace( h, "i)vmin$", "") * vmin :  h
-         h  := ( h ~= "%$") ? RegExReplace( h, "%$", "") * 0.01 * height :  h
-
-         ; If size is "auto" automatically downscale by a multiple of 2. Ex: 50%, 25%, 12.5%...
-         if (s = "auto") {
-            ; Determine what is smaller: declared width and height or screen width and height.
-            ; Since the declared w and h are overwritten by the size, they now determine the bounds.
-            ; Default bounds are the ScreenWidth and ScreenHeight, and can be decreased, never increased.
-            visible_w := (w > this.ScreenWidth) ? this.ScreenWidth : w
-            visible_h := (h > this.ScreenHeight) ? this.ScreenHeight : h
-            auto_w := (width > visible_w) ? width // visible_w + 1 : 1
-            auto_h := (height > visible_h) ? height // visible_h + 1 : 1
-            s := (auto_w > auto_h) ? (1 / auto_w) : (1 / auto_h)
-            w := width ; Since the width was overwritten, restore it to the default.
-            h := height ; w and h determine the bounds of the size.
-         }
-
-         s  := ( s ~= valid_positive) ? RegExReplace( s, "\s", "") : 1 ; Default size is 1.00.
-         s  := ( s ~= "i)(pt|px)$") ? SubStr( s, 1, -2) :  s
-         s  := ( s ~= "i)vw$") ? RegExReplace( s, "i)vw$", "") * vw / width :  s
-         s  := ( s ~= "i)vh$") ? RegExReplace( s, "i)vh$", "") * vh / height:  s
-         s  := ( s ~= "i)vmin$") ? RegExReplace( s, "i)vmin$", "") * vmin / minimum :  s
-         s  := ( s ~= "%$") ? RegExReplace( s, "%$", "") * 0.01 :  s
-
-         ; Scale width and height.
-         w := Floor(w * s)
-         h := Floor(h * s)
-
-         a  := RegExReplace( a, "\s", "")
-         a  := (a ~= "i)top" && a ~= "i)left") ? 1 : (a ~= "i)top" && a ~= "i)cent(er|re)") ? 2
-            : (a ~= "i)top" && a ~= "i)right") ? 3 : (a ~= "i)cent(er|re)" && a ~= "i)left") ? 4
-            : (a ~= "i)cent(er|re)" && a ~= "i)right") ? 6 : (a ~= "i)bottom" && a ~= "i)left") ? 7
-            : (a ~= "i)bottom" && a ~= "i)cent(er|re)") ? 8 : (a ~= "i)bottom" && a ~= "i)right") ? 9
-            : (a ~= "i)top") ? 2 : (a ~= "i)left") ? 4 : (a ~= "i)right") ? 6 : (a ~= "i)bottom") ? 8
-            : (a ~= "i)cent(er|re)") ? 5 : (a ~= "^[1-9]$") ? a : 1 ; Default anchor is top-left.
-
-         a  := ( x ~= "i)left") ? 1+((( a-1)//3)*3) : ( x ~= "i)cent(er|re)") ? 2+((( a-1)//3)*3) : ( x ~= "i)right") ? 3+((( a-1)//3)*3) :  a
-         a  := ( y ~= "i)top") ? 1+(mod( a-1,3)) : ( y ~= "i)cent(er|re)") ? 4+(mod( a-1,3)) : ( y ~= "i)bottom") ? 7+(mod( a-1,3)) :  a
-
-         ; Convert English words to numbers. Don't mess with these values any further.
-         x  := ( x ~= "i)left") ? 0 : (x ~= "i)cent(er|re)") ? 0.5*this.ScreenWidth : (x ~= "i)right") ? this.ScreenWidth : x
-         y  := ( y ~= "i)top") ? 0 : (y ~= "i)cent(er|re)") ? 0.5*this.ScreenHeight : (y ~= "i)bottom") ? this.ScreenHeight : y
-
-         ; Validate x and y, convert to pixels.
-         x  := ( x ~= valid) ? RegExReplace( x, "\s", "") : 0 ; Default x is 0.
-         x  := ( x ~= "i)(pt|px)$") ? SubStr( x, 1, -2) :  x
-         x  := ( x ~= "i)(%|vw)$") ? RegExReplace( x, "i)(%|vw)$", "") * vw :  x
-         x  := ( x ~= "i)vh$") ? RegExReplace( x, "i)vh$", "") * vh :  x
-         x  := ( x ~= "i)vmin$") ? RegExReplace( x, "i)vmin$", "") * vmin :  x
-
-         y  := ( y ~= valid) ? RegExReplace( y, "\s", "") : 0 ; Default y is 0.
-         y  := ( y ~= "i)(pt|px)$") ? SubStr( y, 1, -2) :  y
-         y  := ( y ~= "i)vw$") ? RegExReplace( y, "i)vw$", "") * vw :  y
-         y  := ( y ~= "i)(%|vh)$") ? RegExReplace( y, "i)(%|vh)$", "") * vh :  y
-         y  := ( y ~= "i)vmin$") ? RegExReplace( y, "i)vmin$", "") * vmin :  y
-
-         ; Modify x and y values with the anchor, so that the image has a new point of origin.
-         x  -= (mod(a-1,3) == 0) ? 0 : (mod(a-1,3) == 1) ? w/2 : (mod(a-1,3) == 2) ? w : 0
-         y  -= (((a-1)//3) == 0) ? 0 : (((a-1)//3) == 1) ? h/2 : (((a-1)//3) == 2) ? h : 0
-
-         ; Prevent half-pixel rendering and keep image sharp.
-         x := Floor(x)
-         y := Floor(y)
-
-         m := this.outer.parse.margin_and_padding(m, vw, vh)
-
-         ; Calculate border using margin.
-         _x  := x - (m.4)
-         _y  := y - (m.1)
-         _w  := w + (m.2 + m.4)
-         _h  := h + (m.1 + m.3)
-
-         ; Save size.
-         this.x := _x
-         this.y := _y
-         this.w := _w
-         this.h := _h
-
-         if (image != "") {
-            ; Draw border.
-            c := this.outer.parse.color(c, 0xFF000000) ; Default color is black.
-            pBrush := Gdip_BrushCreateSolid(c)
-            Gdip_FillRectangle(pGraphics, pBrush, _x, _y, _w, _h)
-            Gdip_DeleteBrush(pBrush)
-            ; Draw image.
-            Gdip_DrawImage(pGraphics, pBitmap, x, y, w, h, 0, 0, width, height)
-         }
-
-         ; POINTF
-         Gdip_SetSmoothingMode(pGraphics, 4)  ; None = 3, AntiAlias = 4
-         pPen := Gdip_CreatePen(0xFFFF0000, 1)
-
-         for i, polygon in polygons {
-            DllCall("gdiplus\GdipCreatePath", "int",1, "ptr*",pPath)
-            VarSetCapacity(pointf, 8*polygons[i].polygon.maxIndex(), 0)
-            for j, point in polygons[i].polygon {
-               NumPut(point.x*s + x, pointf, 8*(A_Index-1) + 0, "float")
-               NumPut(point.y*s + y, pointf, 8*(A_Index-1) + 4, "float")
-            }
-            DllCall("gdiplus\GdipAddPathPolygon", "ptr",pPath, "ptr",&pointf, "uint",polygons[i].polygon.maxIndex())
-            DllCall("gdiplus\GdipDrawPath", "ptr",pGraphics, "ptr",pPen, "ptr",pPath) ; DRAWING!
-         }
-
-         Gdip_DeletePen(pPen)
-
-         if (type != "pBitmap")
-            Gdip_DisposeImage(pBitmap)
-
-         return (pGraphics == "") ? this : ""
-      }
-
-      MouseGetPos(ByRef x_mouse, ByRef y_mouse) {
-         _cmm := A_CoordModeMouse
-         CoordMode, Mouse, Screen
-         MouseGetPos, x_mouse, y_mouse
-         CoordMode, Mouse, %_cmm%
-      }
-
-      Origin() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
-         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
-            this.x_last := x_mouse, this.y_last := y_mouse
-
-            x := x_mouse
-            y := y_mouse
-            w := 1
-            h := 1
-            ;stabilize x/y corrdinates in window spy.
-
-            this.state.queue(x, y, w, h, xx, yy, mx, my)
-            this.Redraw(x, y, w, h)
-         }
-      }
-
-      Drag() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
-         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
-            this.x_last := x_mouse, this.y_last := y_mouse
-
-            x_origin := (this.state.mx.1) ? this.state.x.1 : this.state.xx.1
-            y_origin := (this.state.my.1) ? this.state.y.1 : this.state.yy.1
-
-            mx := (x_mouse > x_origin) ? true : false
-            my := (y_mouse > y_origin) ? true : false
-
-            x := (mx) ? x_origin : x_mouse
-            y := (my) ? y_origin : y_mouse
-            xx := (mx) ? x_mouse : x_origin
-            yy := (my) ? y_mouse : y_origin
-            ;a := (xr && yr) ? "top left" : (xr && !yr) ? "bottom left" : (!xr && yr) ? "top right" : "bottom right"
-            ;q := (xr && yr) ? "bottom right" : (xr && !yr) ? "top right" : (!xr && yr) ? "bottom left" : "top left"
-
-            this.state.queue(x, y, w, h, xx, yy, mx, my)
-            this.Redraw(x, y, w, h)
-         }
-      }
-
-      Move() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
-         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
-            this.x_last := x_mouse, this.y_last := y_mouse
-
-            dx := x_mouse - this.state.x_mouse
-            dy := y_mouse - this.state.y_mouse
-            x := this.state.x.1 + dx
-            y := this.state.y.1 + dy
-
-            this.state.queue(x, y, w, h, xx, yy, mx, my)
-            this.Redraw(x, y, w, h)
-         }
-      }
-
-      Hover() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
-         this.state.queue()
-      }
-
-      Recover() {
-         Gdip_SetSmoothingMode(this.gfx, 4)
-         return this
-      }
-
-      ChangeColor(color) {
-         this.color := color
-         Gdip_DeleteBrush(this.pBrush)
-         this.pBrush := Gdip_BrushCreateSolid(this.color)
-         this.Redraw(this.state.x.2, this.state.y.2, this.state.w.2, this.state.h.2)
-      }
-
-      ResizeCorners() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
-         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
-            this.x_last := x_mouse, this.y_last := y_mouse
-
-            xr := this.state.x_mouse - this.state.x.1 - (this.state.w.1 / 2)
-            yr := this.state.y.1 - this.state.y_mouse + (this.state.h.1 / 2) ; Keep Change Change
-            dx := x_mouse - this.state.x_mouse
-            dy := y_mouse - this.state.y_mouse
-
-            if (xr < -1 && yr > 1) {
-               r := "top left"
-               x := this.state.x.1 + dx
-               y := this.state.y.1 + dy
-               w := this.state.w.1 - dx
-               h := this.state.h.1 - dy
-            }
-            if (xr >= -1 && yr > 1) {
-               r := "top right"
-               x := this.state.x.1
-               y := this.state.y.1 + dy
-               w := this.state.w.1 + dx
-               h := this.state.h.1 - dy
-            }
-            if (xr < -1 && yr <= 1) {
-               r := "bottom left"
-               x := this.state.x.1 + dx
-               y := this.state.y.1
-               w := this.state.w.1 - dx
-               h := this.state.h.1 + dy
-            }
-            if (xr >= -1 && yr <= 1) {
-               r := "bottom right"
-               x := this.state.x.1
-               y := this.state.y.1
-               w := this.state.w.1 + dx
-               h := this.state.h.1 + dy
-            }
-
-            this.state.queue(x, y, w, h, xx, yy, mx, my)
-            this.Redraw(x, y, w, h)
-         }
-      }
-
-      ; This works by finding the line equations of the diagonals of the rectangle.
-      ; To identify the quadrant the cursor is located in, the while loop compares it's y value
-      ; with the function line values f(x) = m * xr and y = -m * xr.
-      ; So if yr is below both theoretical y values, then we know it's in the bottom quadrant.
-      ; Be careful with this code, it converts the y plane inversely to match the Decartes tradition.
-
-      ; Safety features include checking for past values to prevent flickering
-      ; Sleep statements are required in every while loop.
-
-      ResizeEdges() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         new_state := this.state.new(A_ThisFunc, x_mouse, y_mouse)
-         if (new_state = true || x_mouse != this.x_last || y_mouse != this.y_last) {
-            this.x_last := x_mouse, this.y_last := y_mouse
-
-            m := -(this.state.h.1 / this.state.w.1)                              ; slope (dy/dx)
-            xr := this.state.x_mouse - this.state.x.1 - (this.state.w.1 / 2)           ; draw a line across the center
-            yr := this.state.y.1 - this.state.y_mouse + (this.state.h.1 / 2)           ; draw a vertical line halfing it
-            dx := x_mouse - this.state.x_mouse
-            dy := y_mouse - this.state.y_mouse
-
-            if (m * xr >= yr && yr > -m * xr)
-               r := "left",   x := this.state.x.1 + dx, w := this.state.w.1 - dx
-            if (m * xr < yr && yr > -m * xr)
-               r := "top",    y := this.state.y.1 + dy, h := this.state.h.1 - dy
-            if (m * xr < yr && yr <= -m * xr)
-               r := "right",  w := this.state.w.1 + dx
-            if (m * xr >= yr && yr <= -m * xr)
-               r := "bottom", h := this.state.h.1 + dy
-
-            this.state.queue(x, y, w, h, xx, yy, mx, my)
-            this.Redraw(x, y, w, h)
-         }
-      }
-
-      isMouseInside() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         return (x_mouse >= this.state.x.2 && x_mouse <= this.state.xx.2
-            && y_mouse >= this.state.y.2 && y_mouse <= this.state.yy.2)
-      }
-
-      isMouseOutside() {
-         return !this.isMouseInside()
-      }
-
-      isMouseOnCorner() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         return (x_mouse == this.state.x.2 || x_mouse == this.state.xx.2)
-            && (y_mouse == this.state.y.2 || y_mouse == this.state.yy.2)
-      }
-
-      isMouseOnEdge() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         return ((x_mouse >= this.state.x.2 && x_mouse <= this.state.xx.2)
-            && (y_mouse == this.state.y.2 || y_mouse == this.state.yy.2))
-            OR ((y_mouse >= this.state.y.2 && y_mouse <= this.state.yy.2)
-            && (x_mouse == this.state.x.2 || x_mouse == this.state.xx.2))
-      }
-
-      isMouseStopped() {
-         this.MouseGetPos(x_mouse, y_mouse)
-         return x_mouse == this.x_last && y_mouse == this.y_last
-      }
-
-      ScreenshotCoordinates() {
-         return (this.state.w.2 > 0 && this.state.h.2 > 0)
-            ? (this.state.x.2 "|" this.state.y.2 "|" this.state.w.2 "|" this.state.h.2) : ""
-      }
-
-      x1() {
-         return this.state.x.2
-      }
-
-      y1() {
-         return this.state.y.2
-      }
-
-      x2() {
-         return this.state.xx.2
-      }
-
-      y2() {
-         return this.state.yy.2
-      }
-
-      width() {
-         return this.state.w.2
-      }
-
-      height() {
-         return this.state.h.2
-      }
-   } ; End of Vector class.
+   } ; End of TextRenderer class.
 
    class INTERACTIVE {
 
@@ -3481,7 +3517,8 @@ class Graphics {
 
          if !(NoTimers) {
             observe := ObjBindMethod(this, "observe")
-            SetTimer, % observe, -10
+            _observe := (A_AhkVersion < 2) ? observe : "observe"
+            SetTimer %_observe%, -10
          }
          return this
       }
@@ -3516,9 +3553,9 @@ class Graphics {
 
          ; Get mouse.
          _cmm := A_CoordModeMouse
-         CoordMode, Mouse, Screen
-         MouseGetPos, _x, _y
-         CoordMode, Mouse, %_cmm%
+         CoordMode Mouse, Screen
+         MouseGetPos _x, _y
+         CoordMode Mouse, %_cmm%
          this._x := _x
          this._y := _y
 
@@ -3620,7 +3657,8 @@ class Graphics {
          ;   . "`nLast:`t" this.x0 ", " this.y0
 
          observe := ObjBindMethod(this, "observe")
-         SetTimer, % observe, -10
+         _observe := (A_AhkVersion < 2) ? observe : "observe"
+         SetTimer %_observe%, -10
       }
 
       Move(x, y) {
