@@ -2,70 +2,64 @@
 ; Author:    iseahound
 ; License:   GPLv3
 ; Version:   August 2018 (not for public use.)
-; Release:   2018-08-21
+; Release:   2019-08-03
 
 #include <Gdip_All>    ; https://goo.gl/rUuEF5
 
 
-; ImageEquality() - Ensures that the pixel vaules of multiple images across mutiple formats are identical.
-ImageEquality(images*){
-   return Graphics.ImageRenderer.Equality(images*)
+; EqualImage() - Ensures that the pixel vaules of multiple images across mutiple formats are identical.
+EqualImage(images*){
+   return Graphics.ImageRenderer.Equal(images*)
 }
 
-; ImagePreprocess() - Converts an image of any type into any new type with cropping and scaling.
-ImagePreprocess(cotype, image, crop:="", scale:="", terms*){
+; PreprocessImage() - Converts an image of any type into any new type with cropping and scaling.
+PreprocessImage(cotype, image, crop:="", scale:="", terms*){
    return Graphics.ImageRenderer.Preprocess(cotype, image, crop, scale, terms*)
 }
 
-; ImageRender() - Displays an image in customizable styles on the screen.
-ImageRender(image:="", style:="", polygons:=""){
+; RenderImage() - Displays an image in customizable styles on the screen.
+RenderImage(image:="", style:="", polygons:=""){
    return Graphics.ImageRenderer.Render(image, style, polygons)
 }
 
-; ImageRenderI() - Allows the user to interact with the displayed image.
-ImageRenderI(image:="", style:="", polygons:="", keybinds:=""){
+; RenderImageI() - Allows the user to interact with the displayed image.
+RenderImageI(image:="", style:="", polygons:="", keybinds:=""){
    return new Graphics.INTERACTIVE(Graphics.ImageRenderer.Render(image, style, polygons), keybinds, 2)
 }
 
-; ImageRenderS() - Creates a sequence of images that can be interacted with.
-ImageRenderS(image:="", style:="", polygons:="", keybinds:=""){
+; RenderImageS() - Creates a sequence of images that can be interacted with.
+RenderImageS(image:="", style:="", polygons:="", keybinds:=""){
    return new Graphics.SEQUENCER(new Graphics.INTERACTIVE(Graphics.ImageRenderer.Render(image, style, polygons), keybinds, 2, true))
 }
 
-; PolygonRender() - Displays polygons in customizable styles on the screen.
-PolygonRender(polygon:="", style:=""){
+; RenderPolygon() - Displays polygons in customizable styles on the screen.
+RenderPolygon(polygon:="", style:=""){
    return Graphics.PolygonRenderer.Render(polygon, style)
 }
 
-; PolygonRenderI() - Allows the user to interact with the displayed polygon.
-PolygonRenderI(polygon:="", style:="", keybinds:=""){
+; RenderPolygonI() - Allows the user to interact with the displayed polygon.
+RenderPolygonI(polygon:="", style:="", keybinds:=""){
    return new Graphics.INTERACTIVE(Graphics.PolygonRenderer.Render(polygon, style), keybinds, 0)
 }
 
-; PolygonRenderS() - Creates a sequence of polygons that can be interacted with.
-PolygonRenderS(polygon:="", style:="", keybinds:=""){
+; RenderPolygonS() - Creates a sequence of polygons that can be interacted with.
+RenderPolygonS(polygon:="", style:="", keybinds:=""){
    return new Graphics.SEQUENCER(new Graphics.INTERACTIVE(Graphics.PolygonRenderer.Render(polygon, style), keybinds, 0, true))
 }
 
-; TextRender() - Displays text in customizable styles on the screen.
-TextRender(text:="", background_style:="", text_style:=""){
+; RenderText() - Displays text in customizable styles on the screen.
+RenderText(text:="", background_style:="", text_style:=""){
    return Graphics.TextRenderer.Render(text, background_style, text_style)
 }
 
-; TextRenderI() - Allows the user to interact with the displayed text.
-TextRenderI(text:="", background_style:="", text_style:="", keybinds:=""){
+; RenderTextI() - Allows the user to interact with the displayed text.
+RenderTextI(text:="", background_style:="", text_style:="", keybinds:=""){
    return new Graphics.INTERACTIVE(Graphics.TextRenderer.Render(text, background_style, text_style), keybinds, 2)
 }
 
-; TextRenderS() - Creates a sequence of text that can be interacted with.
-TextRenderS(text:="", background_style:="", text_style:="", keybinds:=""){
+; RenderTextS() - Creates a sequence of text that can be interacted with.
+RenderTextS(text:="", background_style:="", text_style:="", keybinds:=""){
    return new Graphics.SEQUENCER(new Graphics.INTERACTIVE(Graphics.TextRenderer.Render(text, background_style, text_style), keybinds, 2, true))
-}
-
-; Synthesiser() - The accumulation of all the previous functions to create a
-;                 catch-all solution for graphics rendering. Advanced use only.
-Synthesiser(){
-   return new Graphics.SYNTHESIS
 }
 
 
@@ -903,13 +897,13 @@ class Graphics {
                if !(this.pToken := Gdip_Startup())
                   throw Exception("Gdiplus failed to start. Please ensure you have gdiplus on your system.")
 
-         return this.Create(terms*)
+         return this.CreateWindow(terms*)
       }
 
       ; Duality #1 - Safe wrapper for the GDI+ library during object garbage collection.
       __Delete() {
          if (this.hwnd)
-            this.Destroy()
+            this.DestroyWindow()
 
          global pToken
          if (this.outer.pToken)
@@ -921,7 +915,7 @@ class Graphics {
       }
 
       ; Duality #2 - Creates a window.
-      Create(title := "", window := "", activate := "") {
+      CreateWindow(title := "", window := "", activate := "") {
          ; Retrieve original arguments upon window creation.
          title    := (title != "")    ? title    : this.arg.1
          window   := (window != "")   ? window   : this.arg.2
@@ -932,8 +926,10 @@ class Graphics {
 
          ; Tokenize window styles.
          window := RegExReplace(window, "\s+", " ")
-
-
+         window := StrSplit(window, " ")
+         for i, token in window {
+            ;if (token ~= "i)")
+         }
 
          ;window := (window != "") ? window : " +AlwaysOnTop -Caption +ToolWindow"
          ;window .= " +LastFound -DPIScale +E0x80000 +hwndhwnd"
@@ -974,6 +970,7 @@ class Graphics {
          WS_EX_RIGHTSCROLLBAR      :=        0x0
          WS_EX_DLGMODALFRAME       :=        0x1
          WS_EX_NOPARENTNOTIFY      :=        0x4
+         WS_EX_ALWAYSONTOP         :=        0x4 ; custom
          WS_EX_TOPMOST             :=        0x8
          WS_EX_ACCEPTFILES         :=       0x10
          WS_EX_TRANSPARENT         :=       0x20
@@ -1031,7 +1028,7 @@ class Graphics {
       }
 
       ; Duality #2 - Destroys a window.
-      Destroy() {
+      DestroyWindow() {
          if (this.hdc)
             this.FreeMemory()
          DllCall("DestroyWindow", "ptr",this.hwnd)
@@ -1069,7 +1066,7 @@ class Graphics {
          ;DllCall("QueryPerformanceCounter", "int64*",A_PreciseTime)
          ;Tooltip % PreciseTime := (A_PreciseTime - this.PreciseTime) / this.Frequency
 
-         return this
+         return this.Interop()
       }
 
       ; Duality #3 - Frees the memory buffer.
@@ -1079,6 +1076,12 @@ class Graphics {
          DeleteObject(this.hbm)
          DeleteDC(this.hdc)
          this.gfx := this.obm := this.pBits := this.hbm := this.hdc := ""
+         return this
+      }
+
+      Interop(){
+         ; Use this.outer to dynamically search for DrawRaw() and Render() functions
+         ; of other classes mapping them to this.Draw%classname%. So DrawImage etc.
          return this
       }
 
@@ -1231,7 +1234,7 @@ class Graphics {
 
          this.Finalize()
 
-         if (this.t) {
+         if (this.t > 0) {
             blank := ObjBindMethod(this, "blank")
             time := -1 * this.t
             _blank := (A_AhkVersion < 2) ? blank : "blank"
@@ -1791,12 +1794,13 @@ class Graphics {
 
       Preprocess(cotype, image, crop := "", scale := "", terms*) {
          if (!this.hwnd) {
-            renderer := new this("ImageRenderer.Preprocess")
-            renderer.title := renderer.title "_" renderer.hwnd
-            DllCall("SetWindowText", "ptr",renderer.hwnd, "str",renderer.title)
-            coimage := renderer.Preprocess(cotype, image, crop, scale, terms*)
-            renderer.FreeMemory()
-            renderer := ""
+            _renderer := new this(RegExReplace(A_ThisFunc, "^.*(^|\.)(.*?\..*?)$", "$2"))
+            _renderer.title := _renderer.title "_" _renderer.hwnd
+            DllCall("SetWindowText", "ptr",_renderer.hwnd, "str",_renderer.title)
+            fn := RegExReplace(A_ThisFunc, "^.*(^|\.)(.*)$", "$2")
+            coimage := _renderer[fn](cotype, image, crop, scale, terms*)
+            _renderer.FreeMemory()
+            _renderer := ""
             return coimage
          }
 
@@ -1832,7 +1836,7 @@ class Graphics {
          return coimage
       }
 
-      Equality(images*) {
+      Equal(images*) {
          if (images.Count() == 0)
             return false
 
@@ -1841,12 +1845,13 @@ class Graphics {
 
          ; Activate gdip basically LOL.
          if (!this.hwnd) {
-            renderer := new this("ImageRenderer.Equality")
-            renderer.title := renderer.title "_" renderer.hwnd
-            DllCall("SetWindowText", "ptr",renderer.hwnd, "str",renderer.title)
-            answer := renderer.Equality(images*)
-            renderer.FreeMemory()
-            renderer := ""
+            _renderer := new this(RegExReplace(A_ThisFunc, "^.*(^|\.)(.*?\..*?)$", "$2"))
+            _renderer.title := _renderer.title "_" _renderer.hwnd
+            DllCall("SetWindowText", "ptr",_renderer.hwnd, "str",_renderer.title)
+            fn := RegExReplace(A_ThisFunc, "^.*(^|\.)(.*)$", "$2")
+            answer := _renderer[fn](images*)
+            _renderer.FreeMemory()
+            _renderer := ""
             return answer
          }
 
@@ -1956,10 +1961,10 @@ class Graphics {
          if IsObject(image) and IsFunc(image.Bitmap)
             return "object"
          ; Check if image is an instance of safe_bitmap.
-         if (image.__class = "safe_bitmap")
+         if IsObject(image) and (image.__class = "safe_bitmap")
             return "bitmap"
          ; Check if image is an array of 4 numbers.
-         if (image.1 ~= "^\d+$" && image.2 ~= "^\d+$" && image.3 ~= "^\d+$" && image.4 ~= "^\d+$")
+         if IsObject(image) and (image.1 ~= "^\d+$" && image.2 ~= "^\d+$" && image.3 ~= "^\d+$" && image.4 ~= "^\d+$")
             return "screenshot"
          ; Check if image points to a valid file.
          if FileExist(image)
@@ -2422,7 +2427,7 @@ class Graphics {
                if !(this.pToken := Gdip_Startup())
                   throw Exception("Gdiplus failed to start. Please ensure you have gdiplus on your system.")
 
-         this.Create()
+         this.CreateWindow()
 
          this.__screen := new this.outer.memory(this.ScreenWidth, this.ScreenHeight)
          this.state := new this.outer.queue()
