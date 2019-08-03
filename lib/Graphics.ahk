@@ -2376,7 +2376,7 @@ class Graphics {
       }
 
       isCropArray(array) {
-         if (array.MaxIndex() != 4)
+         if (array.length() != 4)
             return false
          for index, value in array
             if !(value ~= "^\-?\d+(?:\.\d*)?%?$")
@@ -2720,7 +2720,7 @@ class Graphics {
             y := y_mouse
             w := 1
             h := 1
-            ;stabilize x/y corrdinates in window spy.
+            ;stabilize x/y coordinates in window spy.
 
             this.state.queue(x, y, w, h, xx, yy, mx, my)
             this.Redraw(x, y, w, h)
@@ -3510,21 +3510,28 @@ class Graphics {
       ;                   by EXTERNAL programs. Call .Push() after drawing into the buffer to update
       ;                   the screen.
       __New(efx, keybinds := "", BufferMode := 2, NoTimers := 0) {
+         ; efx is the original graphics object.
          this.efx := efx
          this.keybinds := keybinds
          this.key := {}
 
+         ; Derive GDI+ objects from the original graphics object.
          this.hdc := CreateCompatibleDC(this.efx.hdc)
          this.hbm := CreateDIBSection(this.efx.BitmapWidth, -this.efx.BitmapHeight, this.hdc, 32, pBits)
          this.obm := SelectObject(this.hdc, this.hbm)
          this.gfx := Gdip_GraphicsFromHDC(this.hdc)
          this.pBits := pBits
 
+         ; Begin the timer loop that checks for user interactions.
          if !(NoTimers) {
             observe := ObjBindMethod(this, "observe")
             _observe := (A_AhkVersion < 2) ? observe : "observe"
             SetTimer %_observe%, -10
          }
+
+         ; Enumeration of this object.
+         ;[efx, final, gfx, hbm, hdc, key, keybinds, obm, pBits, _move, _scale, _x, _y]
+         ;[__call, __class, __delete, __new, move, observe, paint, scale]
          return this
       }
 
@@ -3535,16 +3542,18 @@ class Graphics {
          DeleteDC(this.hdc)
       }
 
+      ; Delegate any unknown calls to the original graphics object.
       __Call(self, terms*) {
-         if !IsFunc(this[self])
-            return (this.efx)[self](terms*)
+         if !(this.base.haskey(self))
+            if this.efx.haskey(self)
+               return (this.efx)[self](terms*)
       }
 
-
+      ; Timer loop that checks for user interactions.
       observe() {
-         Critical
+         Critical ; Insure this thread cannot be interrupted.
 
-         ; Pull.
+         ; Pull. "final" is like a certificate of authenticity.
          if (this.final != this.efx.final) {
             ; Clone
             this.x := this.efx.x
@@ -3552,19 +3561,18 @@ class Graphics {
             this.w := this.efx.w
             this.h := this.efx.h
 
-            ; Prevent this routine from being called again.
+            ; Update certificate to prevent this routine from being called again.
             this.final := this.efx.final
          }
 
-         ; Get mouse.
-         _cmm := A_CoordModeMouse
+         ; Get mouse coordinates as dx1, dy1.
+         Mouse := "Mouse", Screen := "Screen"
          CoordMode Mouse, Screen
-         MouseGetPos _x, _y
-         CoordMode Mouse, %_cmm%
-         this._x := _x
-         this._y := _y
+         MouseGetPos dx1, dy1
+         this.dx1 := dx1
+         this.dy1 := dy1
 
-         ; Get keys.
+         ; Get keys states and save them to determine their derivatives.
          this.key.LButton := GetKeyState("LButton", "P")
          this.key.RButton := GetKeyState("RButton", "P")
          this.key.Space   := GetKeyState("Space", "P")
@@ -3572,28 +3580,38 @@ class Graphics {
          this.key.Alt     := GetKeyState("Alt", "P")
          this.key.Shift   := GetKeyState("Shift", "P")
 
+         ; Derive key states. 0 = off, 2 = pressed. 1 & 3 are derivatives.
          this._scale := (this.key.Control && this.key.LButton
             && DllCall("GetForegroundWindow") == this.efx.hwnd)
             ? ((!this._scale) ? 1 : 2) : ((this._scale == 2) ? 3 : 0)
 
+         this._stretch := (this.key.Shift && this.key.LButton
+            && !this._scale
+            && DllCall("GetForegroundWindow") == this.efx.hwnd)
+            ? ((!this._stretch) ? 1 : 2) : ((this._stretch == 2) ? 3 : 0)
+
+         this._move := (this.key.LButton
+            && !this._scale && !this._stretch
+            && DllCall("GetForegroundWindow") == this.efx.hwnd)
+            ? ((!this._move) ? 1 : 2) : ((this._move = 2) ? 3 : 0)
+
+         ; Run once when 0 -> 2.
          if (this._scale == 1) {
             this.efx.locked := true
-            this._x0 := this._x
-            this._y0 := this._y
+            this.dx0 := this.dx1
+            this.dy0 := this.dy1
             this.x0 := this.x
             this.y0 := this.y
             this.w0 := this.w
             this.h0 := this.h
          }
 
+         ; Run continuously.
          if (this._scale == 2) {
-            dx := this._x - this._x0
-            dy := this._y - this._y0
-
-            xr := this._x0 - this.x0 - (this.w0 / 2)
-            yr := this.y0 - this._y0 + (this.h0 / 2) ; Keep Change Change
-            ;dx := x_mouse - this.state.x_mouse
-            ;dy := y_mouse - this.state.y_mouse
+            dx := this.dx1 - this.dx0
+            dy := this.dy1 - this.dy0
+            xr := this.dx0 - this.x0 - (this.w0 / 2)
+            yr := this.y0 - this.dy0 + (this.h0 / 2) ; Keep Change Change
 
             if (xr < -1 && yr > 1) {
                r := "top left"
@@ -3626,20 +3644,70 @@ class Graphics {
             this.Scale(x, y, w, h)
          }
 
+         ; Run once when 2 -> 0.
          if (this._scale == 3) {
             this.efx.locked := false
          }
 
+         ; Run once when 0 -> 2.
+         if (this._stretch == 1) {
+            this.efx.locked := true
+            this.dx0 := this.dx1
+            this.dy0 := this.dy1
+            this.x0 := this.x
+            this.y0 := this.y
+            this.w0 := this.w
+            this.h0 := this.h
+         }
 
-         this._move := (this.key.LButton
-            && !this._scale
-            && DllCall("GetForegroundWindow") == this.efx.hwnd)
-            ? ((!this._move) ? 1 : 2) : ((this._move = 2) ? 3 : 0)
+         ; Run continuously.
+         if (this._stretch == 2) {
+            dx := this.dx1 - this.dx0
+            dy := this.dy1 - this.dy0
+            xr := this.dx0 - this.x0 - (this.w0 / 2)
+            yr := this.y0 - this.dy0 + (this.h0 / 2) ; Keep Change Change
+            m := -(this.h0 / this.w0)                ; slope (dy/dx)
+
+            if (m * xr >= yr && yr > -m * xr) {
+               r := "left"
+               x := this.x0 + dx
+               y := this.y0
+               w := this.w0 - dx
+               h := this.h0
+            }
+            if (m * xr < yr && yr > -m * xr) {
+               r := "top"
+               x := this.x0
+               y := this.y0 + dy
+               w := this.w0
+               h := this.h0 - dy
+            }
+            if (m * xr < yr && yr <= -m * xr) {
+               r := "right"
+               x := this.x0
+               y := this.y0
+               w := this.w0 + dx
+               h := this.h0
+            }
+            if (m * xr >= yr && yr <= -m * xr) {
+               r := "bottom"
+               x := this.x0
+               y := this.y0
+               w := this.w0
+               h := this.h0 + dy
+            }
+
+            this.Scale(x, y, w, h)
+         }
+
+         if (this._stretch == 3) {
+            this.efx.locked := false
+         }
 
          if (this._move == 1) {
             this.efx.locked := true
-            this._x0 := this._x
-            this._y0 := this._y
+            this.dx0 := this.dx1
+            this.dy0 := this.dy1
             this.x0 := this.x
             this.y0 := this.y
             this.w0 := this.w
@@ -3647,8 +3715,8 @@ class Graphics {
          }
 
          if (this._move == 2) {
-            dx := this._x - this._x0
-            dy := this._y - this._y0
+            dx := this.dx1 - this.dx0
+            dy := this.dy1 - this.dy0
             this.Move(this.x0 + dx, this.y0 + dy)
          }
 
@@ -3656,10 +3724,10 @@ class Graphics {
             this.efx.locked := false
          }
 
-         ;Tooltip % "Mouse:`t" this._x ", " this._y
-         ;   . "`nInital:`t" this._x0 ", " this._y0
-         ;   . "`nObject:`t" this.x ", " this.y
-         ;   . "`nLast:`t" this.x0 ", " this.y0
+         ;Tooltip % "Mouse:`t" this.dx1 ", " this.dy1
+         ;   . "`nInital:`t" this.dx0 ", " this.dy0
+         ;   . "`nObject:`t" this.x ", " this.y ", " this.w ", " this.h
+         ;   . "`nLast:`t" this.x0 ", " this.y0 ", " this.w0 ", " this.h0
 
          observe := ObjBindMethod(this, "observe")
          _observe := (A_AhkVersion < 2) ? observe : "observe"
@@ -3679,6 +3747,15 @@ class Graphics {
          ;UpdateLayeredWindow(this.efx.hwnd, this.hdc, this.efx.BitmapLeft, this.efx.BitmapTop, this.efx.BitmapWidth, this.efx.BitmapHeight)
       }
 
+      Paint() {
+         Gdip_GraphicsClear(this.gfx)
+         if !(this.w == this.efx.w && this.h == this.efx.h)
+            StretchBlt(this.hdc, this.x, this.y, this.w, this.h, this.efx.hdc, this.efx.x, this.efx.y, this.efx.w, this.efx.h)
+         else
+            BitBlt(this.hdc, this.x, this.y, this.efx.w, this.efx.h, this.efx.hdc, this.efx.x, this.efx.y)
+         UpdateLayeredWindow(this.efx.hwnd, this.hdc, this.efx.BitmapLeft, this.efx.BitmapTop, this.efx.BitmapWidth, this.efx.BitmapHeight)
+      }
+
       ; Mouse
       ; Move
       ; Resize
@@ -3695,14 +3772,6 @@ class Graphics {
       ; Fade
       ; Blur
 
-      Paint() {
-         Gdip_GraphicsClear(this.gfx)
-         if !(this.w == this.efx.w && this.h == this.efx.h)
-            StretchBlt(this.hdc, this.x, this.y, this.w, this.h, this.efx.hdc, this.efx.x, this.efx.y, this.efx.w, this.efx.h)
-         else
-            BitBlt(this.hdc, this.x, this.y, this.efx.w, this.efx.h, this.efx.hdc, this.efx.x, this.efx.y)
-         UpdateLayeredWindow(this.efx.hwnd, this.hdc, this.efx.BitmapLeft, this.efx.BitmapTop, this.efx.BitmapWidth, this.efx.BitmapHeight)
-      }
    } ; End of INTERACTIVE class.
 
    class SEQUENCER {
