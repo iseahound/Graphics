@@ -1192,10 +1192,10 @@ class Graphics {
          this.layers.push([data, styles*])
          o := this.DrawRaw(this.gfx, this.ScreenWidth, this.ScreenHeight, data, styles*)
          this.t := o.0
-         this.x := o.1
-         this.y := o.2
-         this.w := o.3
-         this.h := o.4
+         this.x := (this.x == "") ? o.1                : (this.x < o.1)                ? this.x : o.1
+         this.y := (this.y == "") ? o.2                : (this.y < o.2)                ? this.y : o.2
+         this.w := (this.w == "") ? o.1 + o.3 - this.x : (this.x + this.w > o.1 + o.3) ? this.w : o.1 + o.3 - this.x
+         this.h := (this.h == "") ? o.2 + o.4 - this.y : (this.y + this.h > o.2 + o.4) ? this.h : o.2 + o.4 - this.y
          return this
       }
 
@@ -3128,7 +3128,7 @@ class Graphics {
          width := NumGet(RectF, 8, "float")
          height := NumGet(RectF, 12, "float")
          minimum := (width < height) ? width : height
-         aspect := width / height
+         aspect := (height != 0) ? width / height : 0
 
          ; Default background width and height.
          if (_w == "")
@@ -3545,8 +3545,7 @@ class Graphics {
       ; Delegate any unknown calls to the original graphics object.
       __Call(self, terms*) {
          if !(this.base.haskey(self))
-            if this.efx.haskey(self)
-               return (this.efx)[self](terms*)
+            return (this.efx)[self](terms*)
       }
 
       ; Timer loop that checks for user interactions.
@@ -3555,14 +3554,35 @@ class Graphics {
 
          ; Pull. "final" is like a certificate of authenticity.
          if (this.final != this.efx.final) {
-            ; Clone
-            this.x := this.efx.x
-            this.y := this.efx.y
-            this.w := this.efx.w
-            this.h := this.efx.h
+            ; Extract transformations
+            if (this.locked) {
+               ;this.x_ := this.dx1 - this.dx0
+               ;this.y_ := this.dy1 - this.dy0
+            } else {
+               this.x_ := (this.x == "") ? 0 : this.x_ + this.x - this.x_save
+               this.y_ := (this.y == "") ? 0 : this.y_ + this.y - this.y_save
+               this.w_ := (this.w == "") ? 0 : this.w_ + (this.x + this.w) - (this.x_save + this.w_save)
+               this.h_ := (this.h == "") ? 0 : this.h_ + (this.y + this.h) - (this.y_save + this.h_save)
+            }
 
+            ; Clone
+            this.x := this.x_save := this.efx.x
+            this.y := this.y_save := this.efx.y
+            this.w := this.w_save := this.efx.w
+            this.h := this.h_save := this.efx.h
+
+            ; X/y WOrks fine.
+            if (this.locked) {
+               this.x0 := this.efx.x
+               this.y0 := this.efx.y
+               this.w0 := this.efx.w
+               this.h0 := this.efx.h
+            }
             ; Update certificate to prevent this routine from being called again.
             this.final := this.efx.final
+
+            ; Refresh the screen.
+            this.Paint()
          }
 
          ; Get mouse coordinates as dx1, dy1.
@@ -3585,19 +3605,29 @@ class Graphics {
             && DllCall("GetForegroundWindow") == this.efx.hwnd)
             ? ((!this._scale) ? 1 : 2) : ((this._scale == 2) ? 3 : 0)
 
+         this._drag := (this.key.Alt && this.key.LButton)
+            && !this._scale
+            ? ((!this._drag) ? 1 : 2) : ((this._drag == 2) ? 3 : 0)
+
          this._stretch := (this.key.Shift && this.key.LButton
             && !this._scale
+            && !this._drag
             && DllCall("GetForegroundWindow") == this.efx.hwnd)
             ? ((!this._stretch) ? 1 : 2) : ((this._stretch == 2) ? 3 : 0)
 
          this._move := (this.key.LButton
             && !this._scale && !this._stretch
+            && !this._drag
             && DllCall("GetForegroundWindow") == this.efx.hwnd)
             ? ((!this._move) ? 1 : 2) : ((this._move = 2) ? 3 : 0)
 
          ; Run once when 0 -> 2.
          if (this._scale == 1) {
-            this.efx.locked := true
+            this.locked := true
+            this.x_locked := this.efx.x
+            this.y_locked := this.efx.y
+            this.w_locked := this.efx.w
+            this.h_locked := this.efx.h
             this.dx0 := this.dx1
             this.dy0 := this.dy1
             this.x0 := this.x
@@ -3610,31 +3640,31 @@ class Graphics {
          if (this._scale == 2) {
             dx := this.dx1 - this.dx0
             dy := this.dy1 - this.dy0
-            xr := this.dx0 - this.x0 - (this.w0 / 2)
-            yr := this.y0 - this.dy0 + (this.h0 / 2) ; Keep Change Change
+            rx := ((this.w0 < 0) ? -1 : 1)*(this.dx0 - this.x0 - (this.w0 / 2))
+            ry := ((this.h0 < 0) ? -1 : 1)*(this.y0 - this.dy0 + (this.h0 / 2))
 
-            if (xr < -1 && yr > 1) {
+            if (rx < -1 && ry > 1) {
                r := "top left"
                x := this.x0 + dx
                y := this.y0 + dy
                w := this.w0 - dx
                h := this.h0 - dy
             }
-            if (xr >= -1 && yr > 1) {
+            if (rx >= -1 && ry > 1) {
                r := "top right"
                x := this.x0
                y := this.y0 + dy
                w := this.w0 + dx
                h := this.h0 - dy
             }
-            if (xr < -1 && yr <= 1) {
+            if (rx < -1 && ry <= 1) {
                r := "bottom left"
                x := this.x0 + dx
                y := this.y0
                w := this.w0 - dx
                h := this.h0 + dy
             }
-            if (xr >= -1 && yr <= 1) {
+            if (rx >= -1 && ry <= 1) {
                r := "bottom right"
                x := this.x0
                y := this.y0
@@ -3646,12 +3676,72 @@ class Graphics {
 
          ; Run once when 2 -> 0.
          if (this._scale == 3) {
-            this.efx.locked := false
+            this.locked := false
+         }
+
+         ; Run once when 0 -> 2.
+         if (this._drag == 1) {
+            this.locked := true
+            this.x_locked := this.efx.x
+            this.y_locked := this.efx.y
+            this.w_locked := this.efx.w
+            this.h_locked := this.efx.h
+            this.dx0 := this.dx1
+            this.dy0 := this.dy1
+            this.x0 := this.x
+            this.y0 := this.y
+            this.w0 := this.w
+            this.h0 := this.h
+         }
+
+         ; Run continuously.
+         if (this._drag == 2) {
+            cx := (this.dx1 > this.dx0) ? true : false
+            cy := (this.dy1 > this.dy0) ? true : false
+
+            if (cx && cy) {
+               r := "bottom right"
+               x := this.dx0
+               y := this.dy0
+               w := Abs(this.dx1 - this.dx0)
+               h := Abs(this.dy1 - this.dy0)
+            }
+            if (!cx && cy) {
+               r := "bottom left"
+               x := this.dx1
+               y := this.dy0
+               w := Abs(this.dx1 - this.dx0)
+               h := Abs(this.dy1 - this.dy0)
+            }
+            if (cx && !cy) {
+               r := "top right"
+               x := this.dx0
+               y := this.dy1
+               w := Abs(this.dx1 - this.dx0)
+               h := Abs(this.dy1 - this.dy0)
+            }
+            if (!cx && !cy) {
+               r := "top left"
+               x := this.dx1
+               y := this.dy1
+               w := Abs(this.dx1 - this.dx0)
+               h := Abs(this.dy1 - this.dy0)
+            }
+            this.Scale(x, y, w, h)
+         }
+
+         ; Run once when 2 -> 0.
+         if (this._drag == 3) {
+            this.locked := false
          }
 
          ; Run once when 0 -> 2.
          if (this._stretch == 1) {
-            this.efx.locked := true
+            this.locked := true
+            this.x_locked := this.efx.x
+            this.y_locked := this.efx.y
+            this.w_locked := this.efx.w
+            this.h_locked := this.efx.h
             this.dx0 := this.dx1
             this.dy0 := this.dy1
             this.x0 := this.x
@@ -3663,33 +3753,33 @@ class Graphics {
          ; Run continuously.
          if (this._stretch == 2) {
             dx := this.dx1 - this.dx0
-            dy := this.dy1 - this.dy0
-            xr := this.dx0 - this.x0 - (this.w0 / 2)
-            yr := this.y0 - this.dy0 + (this.h0 / 2) ; Keep Change Change
+            dy := this.dy1 - this.dy0 ; I don't know why 2 of this.h0 works.
+            rx := ((this.h0 < 0) ? -1 : 1)*(this.dx0 - this.x0 - (this.w0 / 2))
+            ry := ((this.h0 < 0) ? -1 : 1)*(this.y0 - this.dy0 + (this.h0 / 2))
             m := -(this.h0 / this.w0)                ; slope (dy/dx)
 
-            if (m * xr >= yr && yr > -m * xr) {
+            if (m * rx >= ry && ry > -m * rx) {
                r := "left"
                x := this.x0 + dx
                y := this.y0
                w := this.w0 - dx
                h := this.h0
             }
-            if (m * xr < yr && yr > -m * xr) {
+            if (m * rx < ry && ry > -m * rx) {
                r := "top"
                x := this.x0
                y := this.y0 + dy
                w := this.w0
                h := this.h0 - dy
             }
-            if (m * xr < yr && yr <= -m * xr) {
+            if (m * rx < ry && ry <= -m * rx) {
                r := "right"
                x := this.x0
                y := this.y0
                w := this.w0 + dx
                h := this.h0
             }
-            if (m * xr >= yr && yr <= -m * xr) {
+            if (m * rx >= ry && ry <= -m * rx) {
                r := "bottom"
                x := this.x0
                y := this.y0
@@ -3701,11 +3791,15 @@ class Graphics {
          }
 
          if (this._stretch == 3) {
-            this.efx.locked := false
+            this.locked := false
          }
 
          if (this._move == 1) {
-            this.efx.locked := true
+            this.locked := true
+            this.x_locked := this.efx.x
+            this.y_locked := this.efx.y
+            this.w_locked := this.efx.w
+            this.h_locked := this.efx.h
             this.dx0 := this.dx1
             this.dy0 := this.dy1
             this.x0 := this.x
@@ -3721,7 +3815,7 @@ class Graphics {
          }
 
          if (this._move == 3) {
-            this.efx.locked := false
+            this.locked := false
          }
 
          ;Tooltip % "Mouse:`t" this.dx1 ", " this.dy1
@@ -3750,9 +3844,9 @@ class Graphics {
       Paint() {
          Gdip_GraphicsClear(this.gfx)
          if !(this.w == this.efx.w && this.h == this.efx.h)
-            StretchBlt(this.hdc, this.x, this.y, this.w, this.h, this.efx.hdc, this.efx.x, this.efx.y, this.efx.w, this.efx.h)
+            StretchBlt(this.hdc, this.x + this.x_ - this.w_/2, this.y + this.y_ - this.h_/2, this.w + this.w_/2, this.h + this.h_/2, this.efx.hdc, this.efx.x, this.efx.y, this.efx.w, this.efx.h)
          else
-            BitBlt(this.hdc, this.x, this.y, this.efx.w, this.efx.h, this.efx.hdc, this.efx.x, this.efx.y)
+            BitBlt(this.hdc, this.x + this.x_, this.y + this.y_, this.efx.w, this.efx.h, this.efx.hdc, this.efx.x, this.efx.y)
          UpdateLayeredWindow(this.efx.hwnd, this.hdc, this.efx.BitmapLeft, this.efx.BitmapTop, this.efx.BitmapWidth, this.efx.BitmapHeight)
       }
 
